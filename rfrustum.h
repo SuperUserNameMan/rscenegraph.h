@@ -78,6 +78,8 @@ RLAPI bool FrustumDrawNode(Frustum *frustum, Node *node);
 
 RLAPI Node3D LoadNodeFromModel( Model *model );
 
+RLAPI void NodeSetPosition( Node *node , Vector3 pos );
+
 RLAPI void NodeRotate( Node *node , Vector3 axis , float angle );
 RLAPI void NodeRotateY( Node *node , float angle );
 
@@ -105,21 +107,36 @@ Node3D LoadNodeFromModel( Model *model )
 	return node;
 }
 
-void NodeRotateY( Node * node , float angle )
+void NodeSetPosition( Node *node , Vector3 pos )
+{
+	node->model->transform.m12 = pos.x ;
+	node->model->transform.m13 = pos.y ;
+	node->model->transform.m14 = pos.z ;
+}
+
+void NodeRotateY( Node *node , float angle )
 {
 	NodeRotate( node , (Vector3){ 0.0f , 1.0f, 0.0f } , angle );
 }
 
-void NodeRotate( Node * node , Vector3 axis , float angle )
+void NodeRotate( Node *node , Vector3 axis , float angle )
 {
-	node->model->transform = MatrixMultiply( node->model->transform , MatrixRotate( axis , angle ) );
+	node->model->transform = MatrixMultiply( MatrixRotate( axis , angle ) , node->model->transform );
+}
+
+void NodeMoveForward( Node *node , float distance )
+{
+	node->model->transform.m12 -= node->model->transform.m2 * distance ;
+	node->model->transform.m13 += node->model->transform.m6 * distance ;
+	node->model->transform.m14 += node->model->transform.m10 * distance ;
 }
 
 bool FrustumDrawNode( Frustum *frustum , Node *node )
 {
     Vector3 center = Vector3Transform( node->center , node->model->transform );
+    //Vector3 
 
-    if ( ! FrustumContainsSphere( frustum, node->center, node->radius ) ) return false;
+    if ( ! FrustumContainsSphere( frustum, center, node->radius ) ) return false;
 
     for (int i = 0; i < node->model->meshCount; i++)
     {
