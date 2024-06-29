@@ -66,11 +66,14 @@ typedef struct Node3D
 
 	Color tint ;
 
-	// 
+	// Untransformed boundings are in model's space
+	// and are computed once in LoadNodeFromModel()
 	BoundingBox untransformedBox ;
 	Vector3 untransformedCenter ;
 	float untransformedRadius ;
 
+	// Transformed boundings are in World's space
+	// and are updated when required.
 	BoundingBox transformedBox ;
 	Vector3 transformedCenter ;
 	float transformedRadius ;
@@ -211,7 +214,7 @@ BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
 
 	const int X=8; // X relative axis = D - A
 	const int Y=9; // Y relative axis = B - A
-//	const int Z=10; // Z axis (not required)
+//	const int Z=10; // Z relative axis (not required)
 
 	Vector3 v[10]; // contains A to Y
 
@@ -219,7 +222,7 @@ BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
 
 	v[A] = Vector3Transform( box.min , transform );
 	v[B] = Vector3Transform( (Vector3){ box.min.x , box.max.y , box.min.z } , transform );
-	//C
+	//C later
 	v[D] = Vector3Transform( (Vector3){ box.max.x , box.min.y , box.min.z } , transform );
 	v[E] = Vector3Transform( (Vector3){ box.min.x , box.min.y , box.max.z } , transform );
 
@@ -276,11 +279,7 @@ void NodeRotateZ( Node *node , float angle )
 
 void NodeRotate( Node *node , Vector3 axis , float angle )
 {
-	Vector3 pos = { node->transform.m12 , node->transform.m13 , node->transform.m14 };
-	node->transform = MatrixMultiply( node->transform , MatrixRotate( axis , angle ));
-	node->transform.m12 = pos.x ;
-	node->transform.m13 = pos.y ;
-	node->transform.m14 = pos.z ;
+	node->rotation = QuaternionMultiply( node->rotation , QuaternionFromAxisAngle( axis , angle ) );
 }
 
 void NodeRotateAlongX( Node *node , float angle )
@@ -361,12 +360,6 @@ bool FrustumDrawNode( Frustum *frustum , Node *node )
 		DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
 		node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
 	}
-
-	DrawBoundingBox( node->untransformedBox , RED );
-	DrawBoundingBox( node->transformedBox , BLUE );
-
-//	DrawSphereWires( node->untransformedCenter , node->untransformedRadius , 4 , 8, RED );
-//	DrawSphereWires( node->transformedCenter , node->transformedRadius , 4 , 8, BLUE );
 
 	return true;
 }
