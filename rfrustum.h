@@ -123,7 +123,6 @@ RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
 RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
-RLAPI void FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's hierachy that is visible inside the frustum
 
 // Node's scenegraph :
 
@@ -152,6 +151,11 @@ RLAPI void NodeRotateAlongZ( Node *node , float angle ); // Rotate along its own
 RLAPI void NodeMoveAlongX( Node *node , float distance ); // Move in direction of its own X axis
 RLAPI void NodeMoveAlongY( Node *node , float distance ); // Move in direction of its own Y axis
 RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction of its own Z axis
+
+// Node drawing :
+
+RLAPI void DrawNodeInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum
+RLAPI void DrawNodeTreeInFrustum( Node *root , Frustum *frustum ); // Draw the node's tree hierachy that is visible inside the frustum
 
 #if defined(__cplusplus)
 }
@@ -551,8 +555,8 @@ void NodeMoveAlongZ( Node *node , float distance )
 	node->position.z += node->transform.m10 * distance ;
 }
 
-
-void FrustumDrawSingleNode( Frustum *frustum , Node *node )
+// Draw a single node if it is inside the frustum :
+void DrawNodeInFrustum( Node *node , Frustum *frustum )
 {
 	NodeUpdateTransforms( node );
 
@@ -586,7 +590,8 @@ void FrustumDrawSingleNode( Frustum *frustum , Node *node )
 	node->insideFrustum = true ;
 }
 
-void FrustumDrawNode( Frustum *frustum , Node *root )
+// Draw a node's tree and apply 
+void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 {
 	Node3D *sibling ;
 
@@ -594,11 +599,11 @@ void FrustumDrawNode( Frustum *frustum , Node *root )
 
 	while( root )
 	{
-		FrustumDrawSingleNode( frustum , root );
+		DrawNodeInFrustum( root , frustum );
 
 		while( sibling = root->nextSibling )
 		{
-			FrustumDrawNode( frustum , sibling );
+			DrawNodeTreeInFrustum( sibling , frustum );
 		}
 
 		root = root->firstChild ;
