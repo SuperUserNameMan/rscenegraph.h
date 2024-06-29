@@ -88,6 +88,11 @@ typedef struct Node3D
 	Node3D *nextSibling;
 	Node3D *prevSibling;
 
+	// Frustum visibility ...
+
+	Frustum * lastFrustum ; // Points the last frustum relative to which the node was drawn
+	bool insideFrustum ; // Tell if the node was visible in the frustum
+
 } Node3D;
 
 typedef struct Node3D Node;
@@ -112,10 +117,10 @@ RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
 RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
-RLAPI bool FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's model if visible inside the frustum
+RLAPI void FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's hierachy that is visible inside the frustum
 
 RLAPI Node3D LoadNodeFromModel( Model *model );
-RLAPI void NodeUpdateTranforms( Node *node );
+RLAPI void NodeUpdateTransforms( Node *node );
 
 // Node's transformations
 
@@ -166,12 +171,17 @@ Node3D NodeRoot()
 	node.nextSibling = NULL ;
 	node.prevSibling = NULL ;
 
+	node.lastFrustum = NULL ;
+	node.insideFrustum = false ;
+
 	return node;
 }
 
 // Detach a node's branch from its parent
 void NodeDetachBranch( Node *node )
 {
+	// TODO recompute relative transforms
+
 	// Node's branch is the node and its own childrens.
 	// We want to detach this branch from the parent.
 	// If the node has siblings, we must extract it from the siblings chain.
@@ -213,6 +223,8 @@ void NodeDetachBranch( Node *node )
 // Remove a node from its parent, siblings and children
 void NodeRemove( Node *node )
 {
+	// TODO recompute relative transforms
+
 	Node3D *prev = node->prevSibling ;
 	Node3D *next = node->nextSibling ;
 	Node3D *child = node->firstChild ;
@@ -263,6 +275,8 @@ void NodeRemove( Node *node )
 
 void NodeAttachChild( Node *parent , Node *child )
 {
+	// TODO recompute relative transforms
+
 	//                                [parent ]--> *firstChild --> ?
 	//                                [_______]
 	//                                    A
@@ -315,12 +329,12 @@ Node3D LoadNodeFromModel( Model *model )
 
 	// Update transform matrix and transformed boundings :
 
-	NodeUpdateTranforms( &node );
+	NodeUpdateTransforms( &node );
 
 	return node;
 }
 
-void NodeUpdateTranforms( Node *node )
+void NodeUpdateTransforms( Node *node )
 {
 	// Calculate node's transformation matrix
 	// Get transform matrix (rotation -> scale -> translation)
@@ -493,15 +507,18 @@ void NodeMoveAlongZ( Node *node , float distance )
 }
 
 
-bool FrustumDrawNode( Frustum *frustum , Node *node )
+void FrustumDrawSingleNode( Frustum *frustum , Node *node )
 {
-	NodeUpdateTranforms( node );
+	NodeUpdateTransforms( node );
+
+	node->lastFrustum = frustum ;
+	node->insideFrustum = false ;
 
 	if ( node->model )
 	{
 		// Frustum clipping :
 
-		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false;
+		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return;
 
 		// Draw the meshes :
 
@@ -521,9 +538,27 @@ bool FrustumDrawNode( Frustum *frustum , Node *node )
 		}
 	}
 
-	return true;
+	node->insideFrustum = true ;
 }
 
+void FrustumDrawNode( Frustum *frustum , Node *root )
+{
+	Node3D *sibling ;
+
+	// TODO relative transforms
+
+	while( root )
+	{
+		FrustumDrawSingleNode( frustum , root );
+
+		while( sibling = root->nextSibling )
+		{
+			FrustumDrawNode( frustum , sibling );
+		}
+
+		root = root->firstChild ;
+	}
+}
 
 
 // Return the frustum of the camera.
