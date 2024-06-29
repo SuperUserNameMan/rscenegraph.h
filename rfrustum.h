@@ -54,6 +54,8 @@ typedef struct Frustum
 
 } Frustum;
 
+typedef struct Node3D Node3D;
+
 typedef struct Node3D 
 {
 	Model *model ;
@@ -78,6 +80,13 @@ typedef struct Node3D
 	Vector3 transformedCenter ;
 	float transformedRadius ;
 
+
+	// Basic scenegraph bindings ...
+
+	Node3D *parent;
+	Node3D *firstChild;
+	Node3D *nextSibling;
+	Node3D *prevSibling;
 
 } Node3D;
 
@@ -133,10 +142,11 @@ RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction o
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
 
-Node3D LoadNodeFromModel( Model *model )
+Node3D NodeRoot()
 {
 	Node3D node ;
-	node.model = model ;
+
+	node.model = NULL ;
 	node.tint = WHITE ;
 
 	node.position = Vector3Zero();
@@ -144,6 +154,151 @@ Node3D LoadNodeFromModel( Model *model )
 	node.scale    = Vector3One();
 
 	node.transform = MatrixIdentity();
+
+	node.untransformedBox.min = Vector3Zero();
+	node.untransformedBox.max = Vector3Zero();
+
+	node.untransformedCenter = Vector3Zero();
+	node.untransformedRadius = 0.0f;
+
+	node.parent = NULL ;
+	node.firstChild = NULL ;
+	node.nextSibling = NULL ;
+	node.prevSibling = NULL ;
+
+	return node;
+}
+
+// Detach a node's branch from its parent
+void NodeDetachBranch( Node *node )
+{
+	// Node's branch is the node and its own childrens.
+	// We want to detach this branch from the parent.
+	// If the node has siblings, we must extract it from the siblings chain.
+
+	Node3D *prev = node->prevSibling ;
+	Node3D *next = node->nextSibling ;
+
+	//                                [parent ]--> *firstChild --> ?
+	//                                [_______]
+	//                                    A
+	//     ______                      ___|___                      ______
+	//    [      ]--> *nextSibling -->[       ]--> *nextSibling -->[      ]
+	//    [ prev ]                    [ node  ]                    [ next ]
+	//    [______]<-- *prevSibling <--[_______]<-- *prevSibling <--[______]
+	//                                   | A
+	//                       *firstChild | | *parent
+	//                                 __V_|__
+	//                                [       ]
+	//                                [ child ]
+
+	// Extraction from the siblings chain :
+
+	if ( prev != NULL ) prev->nextSibling = next ;
+	if ( next != NULL )	next->prevSibling = prev ;
+	node->nextSibling = NULL ;
+	node->prevSibling = NULL ;
+
+	// Extraction from the parent :
+	// All siblings have de same parent, but the parent only refers to the first child.
+
+	if ( node->parent->firstChild == node )
+	{
+		node->parent->firstChild = node->nextSibling ;
+	}
+
+	node->parent = NULL;
+}
+
+// Remove a node from its parent, siblings and children
+void NodeRemove( Node *node )
+{
+	Node3D *prev = node->prevSibling ;
+	Node3D *next = node->nextSibling ;
+	Node3D *child = node->firstChild ;
+
+	//                                [parent ]--> *firstChild --> ?
+	//                                [_______]
+	//                                    A
+	//     ______                      ___|___                      ______
+	//    [      ]--> *nextSibling -->[       ]--> *nextSibling -->[      ]
+	//    [ prev ]                    [ node  ]                    [ next ]
+	//    [______]<-- *prevSibling <--[_______]<-- *prevSibling <--[______]
+	//                                   | A
+	//                       *firstChild | | *parent
+	//                                 __V_|__
+	//                                [       ]
+	//                                [ child ]
+
+	// If the node has a child, the child must take its place.
+
+	if ( child != NULL )
+	{
+		if ( prev != NULL ) prev->nextSibling = child ;
+		if ( next != NULL )	next->prevSibling = child ;
+
+		child->parent = node->parent ;
+
+		if ( node->parent->firstChild == node )
+		{
+			node->parent = child ;
+		}
+	}
+	else // If the node has no child, we just remove it :
+	{
+		if ( prev != NULL ) prev->nextSibling = next ;
+		if ( next != NULL )	next->prevSibling = prev ;
+
+		if ( node->parent->firstChild == node )
+		{
+			node->parent->firstChild = node->nextSibling ;
+		}
+	}
+
+	node->parent      = NULL ;
+	node->prevSibling = NULL ;
+	node->nextSibling = NULL ;
+	node->firstChild  = NULL ;
+}
+
+void NodeAttachChild( Node *parent , Node *child )
+{
+	//                                [parent ]--> *firstChild --> ?
+	//                                [_______]
+	//                                    A
+	//     ______                      ___|___                      ______
+	//    [      ]--> *nextSibling -->[       ]--> *nextSibling -->[      ]
+	//    [ prev ]                    [ node  ]                    [ next ]
+	//    [______]<-- *prevSibling <--[_______]<-- *prevSibling <--[______]
+	//                                   | A
+	//                       *firstChild | | *parent
+	//                                 __V_|__
+	//                                [       ]
+	//                                [ child ]
+
+	if ( child->parent != NULL )
+	{
+		NodeDetachBranch( child );
+	}
+
+	child->parent = parent ;
+
+	if ( parent->firstChild == NULL )
+	{
+		parent->firstChild = child ;
+	}
+	else
+	{
+		child->nextSibling = parent->firstChild ;
+		parent->firstChild->prevSibling = child ;
+	}
+}
+
+Node3D LoadNodeFromModel( Model *model )
+{
+	Node3D node = NodeRoot();
+
+	node.model = model ;
 
 	// Get the untransformed boundings :
 
@@ -176,8 +331,11 @@ void NodeUpdateTranforms( Node *node )
 
 	node->transform = MatrixMultiply( MatrixMultiply( matScale , matRotation ) , matTranslation );
 
-	// Combine model transformation matrix (model.transform) with matrix generated by function parameters (matTransform)
-	node->transform = MatrixMultiply( node->model->transform, node->transform );
+	if ( node->model )
+	{
+		// Combine model transformation matrix (model.transform) with matrix generated by function parameters (matTransform)
+		node->transform = MatrixMultiply( node->model->transform, node->transform );
+	}
 
 	// Update transformed boundings :
 	node->transformedBox = BoundingBoxTransform( node->untransformedBox , node->transform );
@@ -339,26 +497,28 @@ bool FrustumDrawNode( Frustum *frustum , Node *node )
 {
 	NodeUpdateTranforms( node );
 
-
-	// Frustum clipping :
-
-	if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false;
-
-	// Draw the meshes :
-
-	for ( int i = 0 ; i < node->model->meshCount ; i++ )
+	if ( node->model )
 	{
-		Color color = node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color ;
+		// Frustum clipping :
 
-		Color colorTint = WHITE;
-		colorTint.r = (unsigned char)( ( (int)color.r*(int)node->tint.r )/255 );
-		colorTint.g = (unsigned char)( ( (int)color.g*(int)node->tint.g )/255 );
-		colorTint.b = (unsigned char)( ( (int)color.b*(int)node->tint.b )/255 );
-		colorTint.a = (unsigned char)( ( (int)color.a*(int)node->tint.a )/255 );
-		
-		node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = colorTint ;
-		DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
-		node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
+		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false;
+
+		// Draw the meshes :
+
+		for ( int i = 0 ; i < node->model->meshCount ; i++ )
+		{
+			Color color = node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color ;
+
+			Color colorTint = WHITE;
+			colorTint.r = (unsigned char)( ( (int)color.r*(int)node->tint.r )/255 );
+			colorTint.g = (unsigned char)( ( (int)color.g*(int)node->tint.g )/255 );
+			colorTint.b = (unsigned char)( ( (int)color.b*(int)node->tint.b )/255 );
+			colorTint.a = (unsigned char)( ( (int)color.a*(int)node->tint.a )/255 );
+			
+			node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = colorTint ;
+			DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
+			node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
+		}
 	}
 
 	return true;
