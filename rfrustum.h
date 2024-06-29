@@ -62,10 +62,11 @@ typedef struct Node3D
 	Vector3    scale ;
 	Quaternion rotation ;
 
-	Matrix transform ;
+	Matrix transform ; // Computed using position, scale and rotation 
 
 	Color tint ;
 
+	// 
 	BoundingBox untransformedBox ;
 	Vector3 untransformedCenter ;
 	float untransformedRadius ;
@@ -141,12 +142,20 @@ Node3D LoadNodeFromModel( Model *model )
 
 	node.transform = MatrixIdentity();
 
+	// Get the untransformed boundings :
+
+	Matrix temp = model->transform ;
+	model->transform = MatrixIdentity();
 	node.untransformedBox = GetModelBoundingBox( *model );
+	model->transform = temp;
+
 	node.untransformedCenter.x = ( node.untransformedBox.min.x + node.untransformedBox.max.x )*0.5f ;
 	node.untransformedCenter.y = ( node.untransformedBox.min.y + node.untransformedBox.max.y )*0.5f ;
 	node.untransformedCenter.z = ( node.untransformedBox.min.z + node.untransformedBox.max.z )*0.5f ;
 
 	node.untransformedRadius = Vector3Distance( node.untransformedBox.min , node.untransformedBox.max )*0.5f ;
+
+	// Update transform matrix and transformed boundings :
 
 	NodeUpdateTranforms( &node );
 
