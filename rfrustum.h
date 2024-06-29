@@ -212,7 +212,7 @@ void NodeDetachBranch( Node *node )
 	// Extraction from the parent :
 	// All siblings have de same parent, but the parent only refers to the first child.
 
-	if ( node->parent->firstChild == node )
+	if ( node->parent != NULL && node->parent->firstChild == node )
 	{
 		node->parent->firstChild = node->nextSibling ;
 	}
@@ -251,7 +251,7 @@ void NodeRemove( Node *node )
 
 		child->parent = node->parent ;
 
-		if ( node->parent->firstChild == node )
+		if ( node->parent != NULL && node->parent->firstChild == node )
 		{
 			node->parent = child ;
 		}
@@ -261,7 +261,7 @@ void NodeRemove( Node *node )
 		if ( prev != NULL ) prev->nextSibling = next ;
 		if ( next != NULL )	next->prevSibling = prev ;
 
-		if ( node->parent->firstChild == node )
+		if ( node->parent != NULL && node->parent->firstChild == node )
 		{
 			node->parent->firstChild = node->nextSibling ;
 		}
@@ -290,10 +290,14 @@ void NodeAttachChild( Node *parent , Node *child )
 	//                                [       ]
 	//                                [ child ]
 
+	// If the child already has a parent, we detach it automaticly :
+
 	if ( child->parent != NULL )
 	{
 		NodeDetachBranch( child );
 	}
+
+	// Child's adoption procedure :
 
 	child->parent = parent ;
 
@@ -303,6 +307,8 @@ void NodeAttachChild( Node *parent , Node *child )
 	}
 	else
 	{
+		// We insert the new child as firstChild :
+
 		child->nextSibling = parent->firstChild ;
 		parent->firstChild->prevSibling = child ;
 	}
