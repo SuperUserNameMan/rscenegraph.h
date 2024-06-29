@@ -102,6 +102,8 @@ typedef struct Node3D Node;
 extern "C" {            // Prevents name mangling of functions
 #endif
 
+
+
 RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
 RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
@@ -119,7 +121,13 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 RLAPI void FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's hierachy that is visible inside the frustum
 
+RLAPI Node3D NodeRoot();
 RLAPI Node3D LoadNodeFromModel( Model *model );
+
+RLAPI void NodeAttachChild( Node *parent , Node *child );
+RLAPI void NodeDetachBranch( Node *node );
+RLAPI void NodeRemove( Node *node );
+
 RLAPI void NodeUpdateTransforms( Node *node );
 
 // Node's transformations
@@ -206,8 +214,6 @@ void NodeDetachBranch( Node *node )
 
 	if ( prev != NULL ) prev->nextSibling = next ;
 	if ( next != NULL )	next->prevSibling = prev ;
-	node->nextSibling = NULL ;
-	node->prevSibling = NULL ;
 
 	// Extraction from the parent :
 	// All siblings have de same parent, but the parent only refers to the first child.
@@ -217,7 +223,11 @@ void NodeDetachBranch( Node *node )
 		node->parent->firstChild = node->nextSibling ;
 	}
 
+	// Cleanup the orphaned node :
+
 	node->parent = NULL;
+	node->nextSibling = NULL ;
+	node->prevSibling = NULL ;
 }
 
 // Remove a node from its parent, siblings and children
@@ -240,32 +250,51 @@ void NodeRemove( Node *node )
 	//                       *firstChild | | *parent
 	//                                 __V_|__
 	//                                [       ]
-	//                                [ child ]
+	//                                [ child ]--> *nextSibling --> ...
 
 	// If the node has a child, the child must take its place.
+	// But if this child already has siblings, we must insert them into the sibling chain too !
 
 	if ( child != NULL )
 	{
-		if ( prev != NULL ) prev->nextSibling = child ;
-		if ( next != NULL )	next->prevSibling = child ;
+		// Remember who's the parent :
 
-		child->parent = node->parent ;
+		Node3D *parent = node->parent ;
 
-		if ( node->parent != NULL && node->parent->firstChild == node )
+		// Detach the node and its children from the parent :
+
+		NodeDetachBranch( node );
+
+		// Each node's children are reattached to the parent as children :
+
+		do
 		{
-			node->parent = child ;
+			// Attach the child to the new parent :
+			// NOTE : The child will be automaticly detached from its sibling chain in the node.
+
+			NodeAttachChild( parent , child ); 
+
+			// Proceed with the next node's child :
+			// NOTE : the node's firstChild was updated with next child in the sibling chain.
+
+			child = node->firstChild  ;
 		}
+		while( child != NULL );
 	}
 	else // If the node has no child, we just remove it :
 	{
+		// Shortcircuit the node in the siblings chain :
 		if ( prev != NULL ) prev->nextSibling = next ;
 		if ( next != NULL )	next->prevSibling = prev ;
 
+		// All siblings have de same parent, but the parent only refers to the first child.
 		if ( node->parent != NULL && node->parent->firstChild == node )
 		{
-			node->parent->firstChild = node->nextSibling ;
+			node->parent->firstChild = next ;
 		}
 	}
+
+	// Cleanup the lonely removed node :
 
 	node->parent      = NULL ;
 	node->prevSibling = NULL ;
@@ -290,7 +319,7 @@ void NodeAttachChild( Node *parent , Node *child )
 	//                                [       ]
 	//                                [ child ]
 
-	// If the child already has a parent, we detach it automaticly :
+	// If the child already has a parent, we detach it automaticly as a branch :
 
 	if ( child->parent != NULL )
 	{
@@ -301,16 +330,20 @@ void NodeAttachChild( Node *parent , Node *child )
 
 	child->parent = parent ;
 
-	if ( parent->firstChild == NULL )
+	if ( parent != NULL )
 	{
-		parent->firstChild = child ;
-	}
-	else
-	{
-		// We insert the new child as firstChild :
+		if ( parent->firstChild == NULL )
+		{
+			parent->firstChild = child ;
+		}
+		else
+		{
+			// We insert the new child as firstChild 
+			// so we dont have to traverse the sibling's chain :
 
-		child->nextSibling = parent->firstChild ;
-		parent->firstChild->prevSibling = child ;
+			child->nextSibling = parent->firstChild ;
+			parent->firstChild->prevSibling = child ;
+		}
 	}
 }
 
