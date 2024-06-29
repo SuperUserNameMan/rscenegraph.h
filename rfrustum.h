@@ -106,6 +106,11 @@ extern "C" {            // Prevents name mangling of functions
 
 RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
+// Matrix space travels :
+
+RLAPI Matrix MatrixFromGlobalToLocalSpace( Matrix from , Matrix to );
+RLAPI Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to );
+
 // Plane stuff :
 
 RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
@@ -137,14 +142,21 @@ RLAPI void NodeUpdateTransforms( Node *node );
 
 // Node's transforms :
 
-RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every node sin the tree at once
+RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every nodes in the tree at once
+
 RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node
+RLAPI void NodeUnpackTransforms( Node *node );
+
+RLAPI void NodeFromParentToWorldSpace( Node *node , Node *parent );
+RLAPI void NodeFromWorldToParentSpace( Node *node , Node *parent );
+
 
 // NOTE : the transforms below are not immediately effective, till the transform matrix is updated.
 
 RLAPI void NodeSetPosition( Node *node , Vector3 pos );
 
 RLAPI void NodeRotate( Node *node , Vector3 axis , float angle );
+
 RLAPI void NodeRotateX( Node *node , float angle ); // Rotate along world's X axis
 RLAPI void NodeRotateY( Node *node , float angle ); // Rotate along world's Y axis
 RLAPI void NodeRotateZ( Node *node , float angle ); // Rotate along world's Z axis
@@ -156,6 +168,7 @@ RLAPI void NodeRotateAlongZ( Node *node , float angle ); // Rotate along its own
 RLAPI void NodeMoveAlongX( Node *node , float distance ); // Move in direction of its own X axis
 RLAPI void NodeMoveAlongY( Node *node , float distance ); // Move in direction of its own Y axis
 RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction of its own Z axis
+
 
 // Node drawing :
 
@@ -200,11 +213,53 @@ Node3D NodeAsRoot()
 	return node;
 }
 
+// Matrix space travels :
+
+Matrix MatrixFromGlobalToLocalSpace( Matrix from , Matrix to )
+{
+	Matrix m = MatrixMultiply( from , MatrixInvert( to ) );
+	return m ;
+}
+
+Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to )
+{
+	Matrix m = MatrixMultiply( from , to );
+	return m ;
+}
+
+RLAPI void NodeFromParentToWorldSpace( Node *node , Node *parent );
+RLAPI void NodeFromWorldToParentSpace( Node *node , Node *parent );
+RLAPI void NodeUnpackTransforms( Node *node );
+
+void NodeFromWorldToParentSpace( Node *node , Node *parent )
+{
+	node->transform = MatrixFromGlobalToLocalSpace( node->transform , parent->transform );
+
+	NodeUnpackTransforms( node );
+}
+
+void NodeFromParentToWorldSpace( Node *node , Node *parent )
+{
+	node->transform = MatrixFromLocalToGlobalSpace( node->transform , parent->transform );
+
+	NodeUnpackTransforms( node );
+}
+
+// Convert node's transform matrix back into position, scale, rotation ...
+void NodeUnpackTransforms( Node *node )
+{
+	node->rotation = QuaternionFromMatrix( node->transform );
+	node->position = (Vector3){ node->transform.m12 , node->transform.m13 , node->transform.m14 };
+	node->scale = (Vector3){
+		sqrtf( node->transform.m0*node->transform.m0 + node->transform.m1*node->transform.m1 + node->transform.m2*node->transform.m2 ),
+		sqrtf( node->transform.m4*node->transform.m4 + node->transform.m5*node->transform.m5 + node->transform.m6*node->transform.m6 ),
+		sqrtf( node->transform.m8*node->transform.m8 + node->transform.m9*node->transform.m9 + node->transform.m10*node->transform.m10 )
+	};
+}
+
 // Detach a node's branch from its parent
 void NodeDetachBranch( Node *node )
 {
-	// TODO recompute relative transforms
-
 	// Node's branch is the node and its own childrens.
 	// We want to detach this branch from the parent.
 	// If the node has siblings, we must extract it from the siblings chain.
@@ -238,6 +293,10 @@ void NodeDetachBranch( Node *node )
 		node->parent->firstChild = node->nextSibling ;
 	}
 
+	// Restoring transforms back to global space :
+
+	NodeFromParentToWorldSpace( node , node->parent );
+
 	// Cleanup the orphaned node :
 
 	node->parent = NULL;
@@ -248,8 +307,6 @@ void NodeDetachBranch( Node *node )
 // Remove a node from its parent, siblings and children
 void NodeRemove( Node *node )
 {
-	// TODO recompute relative transforms
-
 	Node3D *prev = node->prevSibling ;
 	Node3D *next = node->nextSibling ;
 	Node3D *child = node->firstChild ;
@@ -307,7 +364,12 @@ void NodeRemove( Node *node )
 		{
 			node->parent->firstChild = next ;
 		}
+
+		// Restoring transforms back to global space :
+
+		NodeFromParentToWorldSpace( node , node->parent );
 	}
+
 
 	// Cleanup the lonely removed node :
 
@@ -319,7 +381,6 @@ void NodeRemove( Node *node )
 
 void NodeAttachChild( Node *parent , Node *child )
 {
-	// TODO recompute relative transforms
 
 	//                                [parent ]--> *firstChild --> ?
 	//                                [_______]
@@ -359,6 +420,10 @@ void NodeAttachChild( Node *parent , Node *child )
 			child->nextSibling = parent->firstChild ;
 			parent->firstChild->prevSibling = child ;
 		}
+
+		// Move transforms to parent's space :
+
+		NodeFromWorldToParentSpace( child , parent );
 	}
 }
 
@@ -617,6 +682,8 @@ void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 	Node3D *sibling ;
 
 	// TODO relative transforms
+
+	TODO
 
 	while( root )
 	{
