@@ -11,45 +11,70 @@
 // NOTE: bitwise flags to select corners
 typedef enum 
 {
-	BOX_NO_CORNER          = 0,
+	BOX_NO_CORNER          = 0 ,
 
-	BOX_FRONT_BOTTOM_LEFT  = 1,
-	BOX_FRONT_BOTTOM_RIGHT = 2,
-	BOX_FRONT_TOP_LEFT     = 4,
-	BOX_FRONT_TOP_RIGHT    = 8,
+	BOX_FRONT_BOTTOM_LEFT  = 1 ,
+	BOX_FRONT_BOTTOM_RIGHT = 2 ,
+	BOX_FRONT_TOP_LEFT     = 4 ,
+	BOX_FRONT_TOP_RIGHT    = 8 ,
 
-	BOX_BACK_BOTTOM_LEFT  = 16,
-	BOX_BACK_BOTTOM_RIGHT = 32,
-	BOX_BACK_TOP_LEFT     = 64,
+	BOX_BACK_BOTTOM_LEFT  = 16 ,
+	BOX_BACK_BOTTOM_RIGHT = 32 ,
+	BOX_BACK_TOP_LEFT     = 64 ,
 	BOX_BACK_TOP_RIGHT    = 128,
 
 	BOX_ALL_CORNERS       = 255
 } BoundingBoxCornersFlag;
 
-typedef struct Frustum {
-	Camera *camera;
 
-	float aspect;
+typedef struct Frustum 
+{
+	Camera *camera ;
 
-	Matrix proj;
-	Matrix view;
+	float aspect ;
+
+	Matrix proj ;
+	Matrix view ;
 
 	// Frustum planes :
-	Vector4 up;
-	Vector4 down;
-	Vector4 left;
-	Vector4 right;
-	Vector4 near;
-	Vector4 far;
+
+	union 
+	{
+		Vector4 plane[6] ;
+		struct 
+		{
+			Vector4 up ;
+			Vector4 down ; 
+			Vector4 left ;
+			Vector4 right ;
+			Vector4 near ;
+			Vector4 far ;
+		};
+	};
 
 } Frustum;
 
-typedef struct Node3D {
-	Model *model;
-	Color tint;
-	BoundingBox box;
-	Vector3 center;
-	float radius;
+typedef struct Node3D 
+{
+	Model *model ;
+
+	Vector3    position ;
+	Vector3    scale ;
+	Quaternion rotation ;
+
+	Matrix transform ;
+
+	Color tint ;
+
+	BoundingBox untransformedBox ;
+	Vector3 untransformedCenter ;
+	float untransformedRadius ;
+
+	BoundingBox transformedBox ;
+	Vector3 transformedCenter ;
+	float transformedRadius ;
+
+
 } Node3D;
 
 typedef struct Node3D Node;
@@ -59,7 +84,7 @@ typedef struct Node3D Node;
 extern "C" {            // Prevents name mangling of functions
 #endif
 
-//Matrix GetBoundingBoxMatrix( BoundingBox box );
+RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
 RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
 
@@ -74,14 +99,27 @@ RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
 RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
-RLAPI bool FrustumDrawNode(Frustum *frustum, Node *node);
+RLAPI bool FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's model if visible inside the frustum
 
 RLAPI Node3D LoadNodeFromModel( Model *model );
+RLAPI void NodeUpdateTranforms( Node *node );
+
+// Node's transformations
 
 RLAPI void NodeSetPosition( Node *node , Vector3 pos );
 
 RLAPI void NodeRotate( Node *node , Vector3 axis , float angle );
-RLAPI void NodeRotateY( Node *node , float angle );
+RLAPI void NodeRotateX( Node *node , float angle ); // Rotate along world's X axis
+RLAPI void NodeRotateY( Node *node , float angle ); // Rotate along world's Y axis
+RLAPI void NodeRotateZ( Node *node , float angle ); // Rotate along world's Z axis
+
+RLAPI void NodeRotateAlongX( Node *node , float angle ); // Rotate along its own X axis
+RLAPI void NodeRotateAlongY( Node *node , float angle ); // Rotate along its own Y axis
+RLAPI void NodeRotateAlongZ( Node *node , float angle ); // Rotate along its own Z axis
+
+RLAPI void NodeMoveAlongX( Node *node , float distance ); // Move in direction of its own X axis
+RLAPI void NodeMoveAlongY( Node *node , float distance ); // Move in direction of its own Y axis
+RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction of its own Z axis
 
 #if defined(__cplusplus)
 }
@@ -93,25 +131,128 @@ RLAPI void NodeRotateY( Node *node , float angle );
 
 Node3D LoadNodeFromModel( Model *model )
 {
-	Node3D node;
+	Node3D node ;
 	node.model = model ;
-	node.tint = WHITE;
-	node.box = GetModelBoundingBox( *model );
+	node.tint = WHITE ;
 
-	node.center.x = ( node.box.min.x + node.box.max.x )*0.5f;
-	node.center.y = ( node.box.min.y + node.box.max.y )*0.5f;
-	node.center.z = ( node.box.min.z + node.box.max.z )*0.5f;
+	node.position = Vector3Zero();
+	node.rotation = QuaternionIdentity();
+	node.scale    = Vector3One();
 
-	node.radius = Vector3Distance( node.box.min , node.box.max )*0.5f;
+	node.transform = MatrixIdentity();
+
+	node.untransformedBox = GetModelBoundingBox( *model );
+	node.untransformedCenter.x = ( node.untransformedBox.min.x + node.untransformedBox.max.x )*0.5f ;
+	node.untransformedCenter.y = ( node.untransformedBox.min.y + node.untransformedBox.max.y )*0.5f ;
+	node.untransformedCenter.z = ( node.untransformedBox.min.z + node.untransformedBox.max.z )*0.5f ;
+
+	node.untransformedRadius = Vector3Distance( node.untransformedBox.min , node.untransformedBox.max )*0.5f ;
+
+	NodeUpdateTranforms( &node );
 
 	return node;
 }
 
+void NodeUpdateTranforms( Node *node )
+{
+	// Calculate node's transformation matrix
+	// Get transform matrix (rotation -> scale -> translation)
+
+	Matrix matRotation    = QuaternionToMatrix( node->rotation );
+	Matrix matScale       = MatrixScale( node->scale.x , node->scale.y , node->scale.z );
+	Matrix matTranslation = MatrixTranslate( node->position.x , node->position.y , node->position.z );
+
+	node->transform = MatrixMultiply( MatrixMultiply( matScale , matRotation ) , matTranslation );
+
+	// Combine model transformation matrix (model.transform) with matrix generated by function parameters (matTransform)
+	node->transform = MatrixMultiply( node->model->transform, node->transform );
+
+	// Update transformed boundings :
+	node->transformedBox = BoundingBoxTransform( node->untransformedBox , node->transform );
+
+	node->transformedCenter.x = ( node->transformedBox.min.x + node->transformedBox.max.x )*0.5f ;
+	node->transformedCenter.y = ( node->transformedBox.min.y + node->transformedBox.max.y )*0.5f ;
+	node->transformedCenter.z = ( node->transformedBox.min.z + node->transformedBox.max.z )*0.5f ;
+
+	node->transformedRadius = Vector3Distance( node->transformedBox.min , node->transformedBox.max )*0.5f ;
+}
+
+
+BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
+{
+/*
+      F---------G
+     /|        /|
+  { B---------C |
+  { | |       | |
+ Y{ | E-------|-H  /
+  { |/        |/  /Z
+  { A---------D  /
+    <====X====>
+*/
+
+	const int A=0;
+	const int B=1;
+	const int C=2;
+	const int D=3;
+	const int E=4;
+	const int F=5;
+	const int G=6;
+	const int H=7;
+
+	const int X=8; // X relative axis = D - A
+	const int Y=9; // Y relative axis = B - A
+//	const int Z=10; // Z axis (not required)
+
+	Vector3 v[10]; // contains A to Y
+
+	// Transform axis corners :
+
+	v[A] = Vector3Transform( box.min , transform );
+	v[B] = Vector3Transform( (Vector3){ box.min.x , box.max.y , box.min.z } , transform );
+	//C
+	v[D] = Vector3Transform( (Vector3){ box.max.x , box.min.y , box.min.z } , transform );
+	v[E] = Vector3Transform( (Vector3){ box.min.x , box.min.y , box.max.z } , transform );
+
+	// Calculate relative axis :
+
+	v[X] = Vector3Subtract( v[D] , v[A] );
+	v[Y] = Vector3Subtract( v[B] , v[A] );
+	//v[Z] = Vector3Subtract( v[E] , v[A] );
+
+	// Calculate missing corners :
+
+	v[C] = Vector3Add( v[B] , v[X] );
+
+	v[F] = Vector3Add( v[E] , v[Y] );
+	v[G] = Vector3Add( v[F] , v[X] );
+	v[H] = Vector3Add( v[E] , v[X] );
+
+	// Calculate new AABB :
+
+	box.min = (Vector3){ 9999999.0f , 9999999.0f, 9999999.0f };
+	box.max = (Vector3){-9999999.0f ,-9999999.0f,-9999999.0f };
+
+	for( int i = A ; i <= H ; i++ )
+	{
+		box.min = Vector3Min( box.min , v[i] );
+		box.max = Vector3Max( box.max , v[i] );
+	}
+
+	return box ;
+}
+
 void NodeSetPosition( Node *node , Vector3 pos )
 {
-	node->model->transform.m12 = pos.x ;
-	node->model->transform.m13 = pos.y ;
-	node->model->transform.m14 = pos.z ;
+	node->transform.m12 = pos.x ;
+	node->transform.m13 = pos.y ;
+	node->transform.m14 = pos.z ;
+}
+
+
+void NodeRotateX( Node *node , float angle )
+{
+	NodeRotate( node , (Vector3){ 1.0f , 0.0f, 0.0f } , angle );
 }
 
 void NodeRotateY( Node *node , float angle )
@@ -119,77 +260,109 @@ void NodeRotateY( Node *node , float angle )
 	NodeRotate( node , (Vector3){ 0.0f , 1.0f, 0.0f } , angle );
 }
 
-void NodeRotate( Node *node , Vector3 axis , float angle )
+void NodeRotateZ( Node *node , float angle )
 {
-	node->model->transform = MatrixMultiply( MatrixRotate( axis , angle ) , node->model->transform );
+	NodeRotate( node , (Vector3){ 0.0f , 0.0f, 1.0f } , angle );
 }
 
-void NodeMoveForward( Node *node , float distance )
+void NodeRotate( Node *node , Vector3 axis , float angle )
 {
-	node->model->transform.m12 -= node->model->transform.m2 * distance ;
-	node->model->transform.m13 += node->model->transform.m6 * distance ;
-	node->model->transform.m14 += node->model->transform.m10 * distance ;
+	Vector3 pos = { node->transform.m12 , node->transform.m13 , node->transform.m14 };
+	node->transform = MatrixMultiply( node->transform , MatrixRotate( axis , angle ));
+	node->transform.m12 = pos.x ;
+	node->transform.m13 = pos.y ;
+	node->transform.m14 = pos.z ;
 }
+
+void NodeRotateAlongX( Node *node , float angle )
+{
+	Vector3 axis = { 
+		node->transform.m0 , 
+		node->transform.m1 ,
+		node->transform.m2 };
+
+	NodeRotate( node , axis , angle );
+}
+
+void NodeRotateAlongY( Node *node , float angle )
+{
+	Vector3 axis = { 
+		node->transform.m4 , 
+		node->transform.m5 ,
+		node->transform.m6 };
+
+	NodeRotate( node , axis , angle );
+}
+
+void NodeRotateAlongZ( Node *node , float angle )
+{
+	Vector3 axis = { 
+		node->transform.m8 , 
+		node->transform.m9 ,
+		node->transform.m10 };
+
+	NodeRotate( node , axis , angle );
+}
+
+void NodeMoveAlongX( Node *node , float distance )
+{
+	node->position.x += node->transform.m0 * distance ;
+	node->position.y += node->transform.m1 * distance ;
+	node->position.z += node->transform.m2 * distance ;
+}
+
+void NodeMoveAlongY( Node *node , float distance )
+{
+	node->position.x += node->transform.m4 * distance ;
+	node->position.y += node->transform.m5 * distance ;
+	node->position.z += node->transform.m6 * distance ;
+}
+
+
+void NodeMoveAlongZ( Node *node , float distance )
+{
+	node->position.x += node->transform.m8 * distance ;
+	node->position.y += node->transform.m9 * distance ;
+	node->position.z += node->transform.m10 * distance ;
+}
+
 
 bool FrustumDrawNode( Frustum *frustum , Node *node )
 {
-    Vector3 center = Vector3Transform( node->center , node->model->transform );
-    //Vector3 
+	NodeUpdateTranforms( node );
 
-    if ( ! FrustumContainsSphere( frustum, center, node->radius ) ) return false;
 
-    for (int i = 0; i < node->model->meshCount; i++)
-    {
-        Color color = node->model->materials[node->model->meshMaterial[i]].maps[MATERIAL_MAP_DIFFUSE].color;
+	// Frustum clipping :
 
-        Color colorTint = WHITE;
-        colorTint.r = (unsigned char)(((int)color.r*(int)node->tint.r)/255);
-        colorTint.g = (unsigned char)(((int)color.g*(int)node->tint.g)/255);
-        colorTint.b = (unsigned char)(((int)color.b*(int)node->tint.b)/255);
-        colorTint.a = (unsigned char)(((int)color.a*(int)node->tint.a)/255);
+	if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false;
 
-        node->model->materials[node->model->meshMaterial[i]].maps[MATERIAL_MAP_DIFFUSE].color = colorTint;
-        DrawMesh(node->model->meshes[i], node->model->materials[node->model->meshMaterial[i]], node->model->transform);
-        node->model->materials[node->model->meshMaterial[i]].maps[MATERIAL_MAP_DIFFUSE].color = color;
-    }
+	// Draw the meshes :
 
-	DrawBoundingBox( node->box , RED );
+	for ( int i = 0 ; i < node->model->meshCount ; i++ )
+	{
+		Color color = node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color ;
+
+		Color colorTint = WHITE;
+		colorTint.r = (unsigned char)( ( (int)color.r*(int)node->tint.r )/255 );
+		colorTint.g = (unsigned char)( ( (int)color.g*(int)node->tint.g )/255 );
+		colorTint.b = (unsigned char)( ( (int)color.b*(int)node->tint.b )/255 );
+		colorTint.a = (unsigned char)( ( (int)color.a*(int)node->tint.a )/255 );
+		
+		node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = colorTint ;
+		DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
+		node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
+	}
+
+	DrawBoundingBox( node->untransformedBox , RED );
+	DrawBoundingBox( node->transformedBox , BLUE );
+
+//	DrawSphereWires( node->untransformedCenter , node->untransformedRadius , 4 , 8, RED );
+//	DrawSphereWires( node->transformedCenter , node->transformedRadius , 4 , 8, BLUE );
 
 	return true;
 }
 
-/*Matrix GetBoundingBoxMatrix( BoundingBox box )
-{
-	float xAxis = box.max.x - box.min.x ;
-	float yAxis = box.max.y - box.min.y ;
-	float zAxis = box.max.z - box.min.z ;
 
-	Matrix m = { 
-		xAxis , 0.0f , 0.0f , box.min.x ,
-		0.0f , yAxis , 0.0f , box.min.y ,
-		0.0f , 0.0f , zAxis , box.min.z ,
-		0.0f , 0.0f ,  0.0f , 1.0f 
-	};
-
-	return m;
-}*/
-
-
-
-
-/*
-void DrawMatrix( Matrix m )
-{
-	Vector3 pos   = { m.m12 , m.m13 , m.m14 };
-	Vector3 zAxis = { m.m8 + pos.x , m.m9 + pos.y , m.m10 + pos.z };
-	Vector3 yAxis = { m.m4 + pos.x , m.m5 + pos.y , m.m6  + pos.z };
-	Vector3 xAxis = { m.m0 + pos.x , m.m1 + pos.y , m.m2  + pos.z };
-
-	DrawLine3D( pos , xAxis , RED );
-	DrawLine3D( pos , yAxis , GREEN );
-	DrawLine3D( pos , zAxis , BLUE );
-}
-*/
 
 // Return the frustum of the camera.
 // NOTE : The returned frustum is in World Space coordinates.
@@ -325,12 +498,11 @@ int CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box )
 
 bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius )
 {
-	if ( PlaneDistanceToPoint( frustum->left , center ) <= -radius ) return false;
-	if ( PlaneDistanceToPoint( frustum->right, center ) <= -radius ) return false;
-	if ( PlaneDistanceToPoint( frustum->up   , center ) <= -radius ) return false;
-	if ( PlaneDistanceToPoint( frustum->down , center ) <= -radius ) return false;
-	if ( PlaneDistanceToPoint( frustum->far  , center ) <= -radius ) return false;
-	if ( PlaneDistanceToPoint( frustum->near , center ) <= -radius ) return false;
+	for( int i = 0 ; i < 6 ; i++ )
+	{
+		if ( PlaneDistanceToPoint( frustum->plane[i] , center ) <= -radius ) return false;
+	}
+
 	return true;
 }
 
@@ -344,12 +516,10 @@ bool FrustumContainsBox( Frustum *frustum , BoundingBox box )
 {
 	// A box is outside the frustum if all its corners are outside a single plane
 
-	if ( CheckCollisionPlaneBoxEx( frustum->up   , box ) == BOX_ALL_CORNERS ) return false ;
-	if ( CheckCollisionPlaneBoxEx( frustum->down , box ) == BOX_ALL_CORNERS ) return false ;
-	if ( CheckCollisionPlaneBoxEx( frustum->left , box ) == BOX_ALL_CORNERS ) return false ;
-	if ( CheckCollisionPlaneBoxEx( frustum->right, box ) == BOX_ALL_CORNERS ) return false ;
-	if ( CheckCollisionPlaneBoxEx( frustum->near , box ) == BOX_ALL_CORNERS ) return false ;
-	if ( CheckCollisionPlaneBoxEx( frustum->far  , box ) == BOX_ALL_CORNERS ) return false ;
+	for( int i = 0 ; i < 6 ; i++ )
+	{
+		if ( CheckCollisionPlaneBoxEx( frustum->plane[i] , box ) == BOX_ALL_CORNERS ) return false ;
+	}
 
 	return true;
 }
