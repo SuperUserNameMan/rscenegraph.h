@@ -137,6 +137,11 @@ RLAPI void NodeUpdateTransforms( Node *node );
 
 // Node's transforms :
 
+RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every node sin the tree at once
+RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node
+
+// NOTE : the transforms below are not immediately effective, till the transform matrix is updated.
+
 RLAPI void NodeSetPosition( Node *node , Vector3 pos );
 
 RLAPI void NodeRotate( Node *node , Vector3 axis , float angle );
@@ -410,6 +415,24 @@ void NodeUpdateTransforms( Node *node )
 	node->transformedRadius = Vector3Distance( node->transformedBox.min , node->transformedBox.max )*0.5f ;
 }
 
+void NodeTreeUpdateTransforms( Node *root )
+{
+	Node3D *sibling ;
+
+	// TODO relative transforms
+
+	while( root )
+	{
+		NodeUpdateTransforms( root );
+
+		while( sibling = root->nextSibling )
+		{
+			NodeTreeUpdateTransforms( sibling );
+		}
+
+		root = root->firstChild ;
+	}
+}
 
 BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
 {
@@ -558,8 +581,6 @@ void NodeMoveAlongZ( Node *node , float distance )
 // Draw a single node if it is inside the frustum :
 void DrawNodeInFrustum( Node *node , Frustum *frustum )
 {
-	NodeUpdateTransforms( node );
-
 	node->lastFrustum = frustum ;
 	node->insideFrustum = false ;
 
@@ -590,7 +611,7 @@ void DrawNodeInFrustum( Node *node , Frustum *frustum )
 	node->insideFrustum = true ;
 }
 
-// Draw a node's tree and apply 
+// Draw a node's tree and apply relative transforms :
 void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 {
 	Node3D *sibling ;
