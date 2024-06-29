@@ -102,9 +102,11 @@ typedef struct Node3D Node;
 extern "C" {            // Prevents name mangling of functions
 #endif
 
-
+// AABB BoundingBox stuff :
 
 RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
+
+// Plane stuff :
 
 RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
 
@@ -112,6 +114,8 @@ RLAPI bool CheckCollisionPlanePoint( Vector4 plane , Vector3 point );
 RLAPI bool CheckCollisionPlaneSphere( Vector4 plane , Vector3 center , float radius );
 RLAPI bool CheckCollisionPlaneBox( Vector4 plane , BoundingBox box );
 RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Return a BoundingBoxCornersFlag bitfield
+
+// Frustum stuff :
 
 RLAPI Frustum CameraGetFrustum( Camera *camera , float aspect );
 
@@ -121,8 +125,10 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 RLAPI void FrustumDrawNode(Frustum *frustum, Node *node); // Draw the node's hierachy that is visible inside the frustum
 
-RLAPI Node3D NodeRoot();
-RLAPI Node3D LoadNodeFromModel( Model *model );
+// Node's scenegraph :
+
+RLAPI Node3D NodeAsRoot();
+RLAPI Node3D NodeAsModel( Model *model );
 
 RLAPI void NodeAttachChild( Node *parent , Node *child );
 RLAPI void NodeDetachBranch( Node *node );
@@ -130,7 +136,7 @@ RLAPI void NodeRemove( Node *node );
 
 RLAPI void NodeUpdateTransforms( Node *node );
 
-// Node's transformations
+// Node's transforms :
 
 RLAPI void NodeSetPosition( Node *node , Vector3 pos );
 
@@ -155,7 +161,7 @@ RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction o
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
 
-Node3D NodeRoot()
+Node3D NodeAsRoot()
 {
 	Node3D node ;
 
@@ -347,9 +353,9 @@ void NodeAttachChild( Node *parent , Node *child )
 	}
 }
 
-Node3D LoadNodeFromModel( Model *model )
+Node3D NodeAsModel( Model *model )
 {
-	Node3D node = NodeRoot();
+	Node3D node = NodeAsRoot();
 
 	node.model = model ;
 
