@@ -112,9 +112,6 @@ RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
 // Matrix space travels :
 
-RLAPI Matrix MatrixFromGlobalToLocalSpace( Matrix from , Matrix to );
-RLAPI Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to );
-
 RLAPI Matrix MatrixNormalize( Matrix m ); // Normalize the scales of the transform matrix
 RLAPI Matrix MatrixRotation( Matrix m ); // Normalize the scales, and nullify the translation of the transform matrix
 
@@ -158,8 +155,6 @@ RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matri
 RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node
 RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
 
-RLAPI void NodeFromParentToWorldSpace( Node *node , Node *parent );
-RLAPI void NodeFromWorldToParentSpace( Node *node , Node *parent );
 
 
 // NOTE : the transforms below are not immediately effective, till the transform matrix is updated.
@@ -299,25 +294,6 @@ Matrix MatrixRotation( Matrix m )
 }
 
 
-
-void NodeFromWorldToParentSpace( Node *node , Node *parent )
-{
-	NodeUpdateTransforms( node );
-
-	node->transform = MatrixFromGlobalToLocalSpace( node->transform , parent->transform );
-
-	NodeUnpackTransforms( node );
-}
-
-void NodeFromParentToWorldSpace( Node *node , Node *parent )
-{
-	NodeUpdateTransforms( node );
-
-	node->transform = MatrixFromLocalToGlobalSpace( node->transform , parent->transform );
-
-	NodeUnpackTransforms( node );
-}
-
 // Convert node's transform matrix back into position, scale, rotation ...
 void NodeUnpackTransforms( Node *node )
 {
@@ -370,7 +346,7 @@ void NodeDetachBranch( Node *node )
 	
 		// Restoring transforms back to global space :
 
-		NodeFromParentToWorldSpace( node , node->parent );
+		NodeUnpackTransforms( node );
 	}
 
 	// Cleanup the orphaned node :
@@ -446,7 +422,7 @@ void NodeRemove( Node *node )
 
 			// Restoring transforms back to global space :
 	
-			NodeFromParentToWorldSpace( node , node->parent );
+			NodeUnpackTransforms( node );
 		}
 	}
 
@@ -462,19 +438,20 @@ void NodeRemove( Node *node )
 
 void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 {
-	NodeAttachChild( parent , child );
-
-	if ( ! parent->model ) return ;
-
-	for( int i = 0 ; i < parent->model->boneCount ; i++ )
+	if ( parent->model != NULL )
 	{
-		if ( TextIsEqual( parent->model->bones[i].name , boneName ) )
+		for( int i = 0 ; i < parent->model->boneCount ; i++ )
 		{
-			child->position = parent->model->bindPose[i].translation ;
-			child->positionRelativeToBoneId = i ;
-			break;
+			if ( TextIsEqual( parent->model->bones[i].name , boneName ) )
+			{
+				child->position = parent->model->bindPose[i].translation ;
+				child->positionRelativeToBoneId = i ;
+				break;
+			}
 		}
 	}
+
+	NodeAttachChild( parent , child );
 }
 
 void NodeAttachChild( Node *parent , Node *child )
@@ -522,7 +499,7 @@ void NodeAttachChild( Node *parent , Node *child )
 
 		// Move transforms to parent's space :
 
-		NodeFromWorldToParentSpace( child , parent );
+//		NodeFromWorldToParentSpace( child , parent );
 	}
 }
 
