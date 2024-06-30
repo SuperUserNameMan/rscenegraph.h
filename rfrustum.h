@@ -468,7 +468,7 @@ void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 
 	for( int i = 0 ; i < parent->model->boneCount ; i++ )
 	{
-		if ( strcmp( parent->model->bones[i].name , boneName ) == 0 )
+		if ( TextIsEqual( parent->model->bones[i].name , boneName ) )
 		{
 			child->position = parent->model->bindPose[i].translation ;
 			child->positionRelativeToBoneId = i ;
