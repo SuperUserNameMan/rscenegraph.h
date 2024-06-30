@@ -61,8 +61,8 @@ typedef struct Node3D
 	Model *model ;
 
 	Vector3    position ;
-	Vector3    scale ;
-	Quaternion rotation ;
+	Vector3    scale    ;
+	Matrix     rotation ; // Contains the rotation matrix only
 
 	Matrix transform ; // Computed using position, scale and rotation 
 
@@ -111,6 +111,10 @@ RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 RLAPI Matrix MatrixFromGlobalToLocalSpace( Matrix from , Matrix to );
 RLAPI Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to );
 
+RLAPI Matrix MatrixNormalize( Matrix m ); // Normalize the scales of the transform matrix
+RLAPI Matrix MatrixRotation( Matrix m ); // Normalize the scales, and nullify the translation of the transform matrix
+
+
 // Plane stuff :
 
 RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
@@ -145,7 +149,7 @@ RLAPI void NodeUpdateTransforms( Node *node );
 RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every nodes in the tree at once
 
 RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node
-RLAPI void NodeUnpackTransforms( Node *node );
+RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
 
 RLAPI void NodeFromParentToWorldSpace( Node *node , Node *parent );
 RLAPI void NodeFromWorldToParentSpace( Node *node , Node *parent );
@@ -191,7 +195,7 @@ Node3D NodeAsRoot()
 	node.tint = WHITE ;
 
 	node.position = Vector3Zero();
-	node.rotation = QuaternionIdentity();
+	node.rotation = MatrixIdentity();
 	node.scale    = Vector3One();
 
 	node.transform = MatrixIdentity();
@@ -227,9 +231,35 @@ Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to )
 	return m ;
 }
 
-RLAPI void NodeFromParentToWorldSpace( Node *node , Node *parent );
-RLAPI void NodeFromWorldToParentSpace( Node *node , Node *parent );
-RLAPI void NodeUnpackTransforms( Node *node );
+Matrix MatrixNormalize( Matrix m )
+{
+	float len = Vector3Length( (Vector3){ m.m0 , m.m1 , m.m2 } );
+	m.m0 /= len ;
+	m.m1 /= len ;
+	m.m2 /= len ;
+
+	len = Vector3Length( (Vector3){ m.m4 , m.m5 , m.m6 } );
+	m.m4 /= len ;
+	m.m5 /= len ;
+	m.m6 /= len ;
+
+	len = Vector3Length( (Vector3){ m.m8 , m.m9 , m.m10 } );
+	m.m8 /= len ;
+	m.m9 /= len ;
+	m.m10 /= len ;
+
+	return m ;
+}
+
+Matrix MatrixRotation( Matrix m )
+{
+	m.m12 = 0.0f ;
+	m.m13 = 0.0f ;
+	m.m14 = 0.0f ;
+	return MatrixNormalize( m );
+}
+
+
 
 void NodeFromWorldToParentSpace( Node *node , Node *parent )
 {
@@ -248,13 +278,13 @@ void NodeFromParentToWorldSpace( Node *node , Node *parent )
 // Convert node's transform matrix back into position, scale, rotation ...
 void NodeUnpackTransforms( Node *node )
 {
-	node->rotation = QuaternionFromMatrix( node->transform );
 	node->position = (Vector3){ node->transform.m12 , node->transform.m13 , node->transform.m14 };
 	node->scale = (Vector3){
 		sqrtf( node->transform.m0*node->transform.m0 + node->transform.m1*node->transform.m1 + node->transform.m2*node->transform.m2 ),
 		sqrtf( node->transform.m4*node->transform.m4 + node->transform.m5*node->transform.m5 + node->transform.m6*node->transform.m6 ),
 		sqrtf( node->transform.m8*node->transform.m8 + node->transform.m9*node->transform.m9 + node->transform.m10*node->transform.m10 )
 	};
+	node->rotation = MatrixRotation( node->transform );
 }
 
 // Detach a node's branch from its parent
@@ -458,11 +488,10 @@ void NodeUpdateTransforms( Node *node )
 	// Calculate node's transformation matrix
 	// Get transform matrix (rotation -> scale -> translation)
 
-	Matrix matRotation    = QuaternionToMatrix( node->rotation );
 	Matrix matScale       = MatrixScale( node->scale.x , node->scale.y , node->scale.z );
 	Matrix matTranslation = MatrixTranslate( node->position.x , node->position.y , node->position.z );
 
-	node->transform = MatrixMultiply( MatrixMultiply( matScale , matRotation ) , matTranslation );
+	node->transform = MatrixMultiply( MatrixMultiply( matScale , node->rotation ) , matTranslation );
 
 	if ( node->model )
 	{
@@ -588,7 +617,7 @@ void NodeRotateZ( Node *node , float angle )
 
 void NodeRotate( Node *node , Vector3 axis , float angle )
 {
-	node->rotation = QuaternionMultiply( node->rotation , QuaternionFromAxisAngle( axis , angle ) );
+	node->rotation = MatrixMultiply( node->rotation , MatrixRotate( axis , angle ) );
 }
 
 void NodeRotateAlongX( Node *node , float angle )
@@ -683,7 +712,7 @@ void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 
 	// TODO relative transforms
 
-	TODO
+//	TODO
 
 	while( root )
 	{
