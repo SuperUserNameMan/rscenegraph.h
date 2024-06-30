@@ -7,6 +7,7 @@
 #include <rcamera.h>
 
 
+
 // BoundingBoxCornersFlag 
 // NOTE: bitwise flags to select corners
 typedef enum 
@@ -24,6 +25,7 @@ typedef enum
 	BOX_BACK_TOP_RIGHT    = 128,
 
 	BOX_ALL_CORNERS       = 255
+
 } BoundingBoxCornersFlag;
 
 
@@ -65,6 +67,7 @@ typedef struct Node3D
 	Matrix     rotation ; // Contains the rotation matrix only
 
 	int        positionRelativeToBoneId ;
+	char      *positionRelativeToBoneName ;
 
 	Matrix transform ; // Computed using position, scale and rotation and parent's transform /!\
 
@@ -128,7 +131,7 @@ RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Retur
 // Frustum stuff :
 
 RLAPI Frustum CameraGetFrustum( Camera *camera , float aspect );
-
+#define FrustumFromCamera CameraGetFrustum
 RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
 RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
@@ -136,13 +139,14 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 // Node's scenegraph :
 
-RLAPI Node3D NodeAsRoot();
+RLAPI Node3D NodeAsGroup();
+#define NodeAsRoot NodeAsGroup
 RLAPI Node3D NodeAsModel( Model *model );
 
 RLAPI void NodeAttachTo( Node *child , Node *parent );
-RLAPI void NodeAttachToBone( Node *child, Node *parent , char *boneName );
-RLAPI void NodeDetachBranch( Node *node );
-RLAPI void NodeRemove( Node *node );
+RLAPI void NodeAttachToBone( Node *child , Node *parent , char *boneName );
+RLAPI void NodeDetachBranch( Node *node ); // Detach the node and its children from the tree.
+RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
 
 typedef void (*NodeTreeTraversalCallback)( Node *node , void *userData );
 
@@ -152,9 +156,9 @@ RLAPI void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , 
 
 RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every nodes in the tree at once
 
-RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node
-RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
+RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node from its position, scale and rotation
 
+RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
 
 
 // NOTE : the transforms below are not immediately effective, till the transform matrix is updated.
@@ -189,7 +193,7 @@ RLAPI void DrawNodeTreeInFrustum( Node *root , Frustum *frustum ); // Draw the n
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
 
-Node3D NodeAsRoot()
+Node3D NodeAsGroup()
 {
 	Node3D node ;
 
@@ -201,6 +205,7 @@ Node3D NodeAsRoot()
 	node.scale    = Vector3One();
 
 	node.positionRelativeToBoneId = -1 ;
+	node.positionRelativeToBoneName = NULL ;
 
 	node.transform = MatrixIdentity();
 
@@ -285,11 +290,13 @@ Matrix MatrixRotation( Matrix m )
 void NodeUnpackTransforms( Node *node )
 {
 	node->position = (Vector3){ node->transform.m12 , node->transform.m13 , node->transform.m14 };
+
 	node->scale = (Vector3){
 		sqrtf( node->transform.m0*node->transform.m0 + node->transform.m1*node->transform.m1 + node->transform.m2*node->transform.m2 ),
 		sqrtf( node->transform.m4*node->transform.m4 + node->transform.m5*node->transform.m5 + node->transform.m6*node->transform.m6 ),
 		sqrtf( node->transform.m8*node->transform.m8 + node->transform.m9*node->transform.m9 + node->transform.m10*node->transform.m10 )
 	};
+
 	node->rotation = MatrixRotation( node->transform );
 }
 
@@ -299,7 +306,7 @@ void NodeDetachBranch( Node *node )
 {
 	// Node's branch is the node and its own childrens.
 	// We want to detach this branch from the parent.
-	// If the node has siblings, we must extract it from the siblings chain.
+	// If the node has siblings, we must also extract it from the siblings chain /!\
 
 	Node3D *prev = node->prevSibling ;
 	Node3D *next = node->nextSibling ;
@@ -327,7 +334,7 @@ void NodeDetachBranch( Node *node )
 
 	if ( node->parent != NULL )
 	{
-		if (  node->parent->firstChild == node )
+		if ( node->parent->firstChild == node )
 		{
 			node->parent->firstChild = node->nextSibling ;
 		}
@@ -339,6 +346,7 @@ void NodeDetachBranch( Node *node )
 	node->nextSibling = NULL ;
 	node->prevSibling = NULL ;
 	node->positionRelativeToBoneId = -1 ;
+	node->positionRelativeToBoneName = NULL ;
 }
 
 // Remove a node from its parent, siblings and children
@@ -414,6 +422,7 @@ void NodeRemove( Node *node )
 	node->nextSibling = NULL ;
 	node->firstChild  = NULL ;
 	node->positionRelativeToBoneId = -1 ;
+	node->positionRelativeToBoneName = NULL ;
 }
 
 void NodeAttachToBone( Node *child , Node *parent , char *boneName )
@@ -431,6 +440,7 @@ void NodeAttachToBone( Node *child , Node *parent , char *boneName )
 			{
 				child->position = parent->model->bindPose[i].translation ;
 				child->positionRelativeToBoneId = i ;
+				child->positionRelativeToBoneName = parent->model->bones[i].name ;
 				NodeUpdateTransforms( child );
 				break;
 			}
