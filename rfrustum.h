@@ -361,14 +361,17 @@ void NodeDetachBranch( Node *node )
 	// Extraction from the parent :
 	// All siblings have de same parent, but the parent only refers to the first child.
 
-	if ( node->parent != NULL && node->parent->firstChild == node )
+	if ( node->parent != NULL )
 	{
-		node->parent->firstChild = node->nextSibling ;
+		if (  node->parent->firstChild == node )
+		{
+			node->parent->firstChild = node->nextSibling ;
+		}
+	
+		// Restoring transforms back to global space :
+
+		NodeFromParentToWorldSpace( node , node->parent );
 	}
-
-	// Restoring transforms back to global space :
-
-	NodeFromParentToWorldSpace( node , node->parent );
 
 	// Cleanup the orphaned node :
 
@@ -434,14 +437,17 @@ void NodeRemove( Node *node )
 		if ( next != NULL )	next->prevSibling = prev ;
 
 		// All siblings have de same parent, but the parent only refers to the first child.
-		if ( node->parent != NULL && node->parent->firstChild == node )
+		if ( node->parent != NULL )
 		{
-			node->parent->firstChild = next ;
+			if ( node->parent->firstChild == node )
+			{
+				node->parent->firstChild = next ;
+			}
+
+			// Restoring transforms back to global space :
+	
+			NodeFromParentToWorldSpace( node , node->parent );
 		}
-
-		// Restoring transforms back to global space :
-
-		NodeFromParentToWorldSpace( node , node->parent );
 	}
 
 
