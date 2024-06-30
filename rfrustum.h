@@ -66,7 +66,7 @@ typedef struct Node3D
 
 	int        positionRelativeToBoneId ;
 
-	Matrix transform ; // Computed using position, scale and rotation 
+	Matrix transform ; // Computed using position, scale and rotation and parent's transform /!\
 
 	Color tint ;
 
@@ -250,19 +250,6 @@ Node3D NodeAsModel( Model *model )
 	return node;
 }
 
-// Matrix space travels :
-
-Matrix MatrixFromGlobalToLocalSpace( Matrix from , Matrix to )
-{
-	Matrix m = MatrixMultiply( from , MatrixInvert( to ) );
-	return m ;
-}
-
-Matrix MatrixFromLocalToGlobalSpace( Matrix from , Matrix to )
-{
-	Matrix m = MatrixMultiply( from , to );
-	return m ;
-}
 
 Matrix MatrixNormalize( Matrix m )
 {
@@ -306,6 +293,7 @@ void NodeUnpackTransforms( Node *node )
 	node->rotation = MatrixRotation( node->transform );
 }
 
+
 // Detach a node's branch from its parent
 void NodeDetachBranch( Node *node )
 {
@@ -343,10 +331,6 @@ void NodeDetachBranch( Node *node )
 		{
 			node->parent->firstChild = node->nextSibling ;
 		}
-	
-		// Restoring transforms back to global space :
-
-		NodeUnpackTransforms( node );
 	}
 
 	// Cleanup the orphaned node :
@@ -419,10 +403,6 @@ void NodeRemove( Node *node )
 			{
 				node->parent->firstChild = next ;
 			}
-
-			// Restoring transforms back to global space :
-	
-			NodeUnpackTransforms( node );
 		}
 	}
 
@@ -438,6 +418,11 @@ void NodeRemove( Node *node )
 
 void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 {
+	if ( child->parent != NULL )
+	{
+		NodeDetachBranch( child );
+	}
+
 	if ( parent->model != NULL )
 	{
 		for( int i = 0 ; i < parent->model->boneCount ; i++ )
@@ -446,6 +431,7 @@ void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 			{
 				child->position = parent->model->bindPose[i].translation ;
 				child->positionRelativeToBoneId = i ;
+				NodeUpdateTransforms( child );
 				break;
 			}
 		}
@@ -453,6 +439,7 @@ void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 
 	NodeAttachChild( parent , child );
 }
+
 
 void NodeAttachChild( Node *parent , Node *child )
 {
@@ -470,7 +457,9 @@ void NodeAttachChild( Node *parent , Node *child )
 	//                                [       ]
 	//                                [ child ]
 
+
 	// If the child already has a parent, we detach it automaticly as a branch :
+	// NOTE : by detaching it, its transform are updated into global space.
 
 	if ( child->parent != NULL )
 	{
@@ -497,9 +486,10 @@ void NodeAttachChild( Node *parent , Node *child )
 			parent->firstChild = child ;
 		}
 
-		// Move transforms to parent's space :
-
-//		NodeFromWorldToParentSpace( child , parent );
+		// Move child's transforms to parent's space :
+		
+		child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ) );
+		NodeUnpackTransforms( child );
 	}
 }
 
