@@ -144,9 +144,9 @@ RLAPI void NodeAttachChild( Node *parent , Node *child );
 RLAPI void NodeDetachBranch( Node *node );
 RLAPI void NodeRemove( Node *node );
 
-typedef void (*NodeTreeTraversalCallback)( Node *node , Node *root );
+typedef void (*NodeTreeTraversalCallback)( Node *node , void *userData );
 
-RLAPI void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback );
+RLAPI void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , void *userData );
 
 // Node's transforms :
 
@@ -505,7 +505,12 @@ void NodeUpdateTransforms( Node *node )
 	if ( node->model )
 	{
 		// Combine model transforms with node transforms
-		node->transform = MatrixMultiply( node->model->transform, node->transform );
+		node->transform = MatrixMultiply( node->model->transform , node->transform );
+	}
+
+	if ( node->parent )
+	{
+		node->transform = MatrixMultiply( node->transform , node->parent->transform );
 	}
 
 	// Update transformed boundings :
@@ -518,14 +523,32 @@ void NodeUpdateTransforms( Node *node )
 	node->transformedRadius = Vector3Distance( node->transformedBox.min , node->transformedBox.max )*0.5f ;
 }
 
-void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback )
+void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , void *userData )
 {
 	Node3D *sibling ;
 	Node3D *node = root ;
 
 	while( node )
 	{
-		callback( node , root );
+		callback( node , userData );
+
+		while( sibling = node->nextSibling )
+		{
+			NodeTreeTraversal( sibling , callback , userData );
+		}
+
+		node = node->firstChild ;
+	}
+}
+
+void NodeTreeUpdateTransforms( Node *root )
+{
+	Node3D *sibling ;
+	Node3D *node = root ;
+
+	while( node )
+	{
+		NodeUpdateTransforms( node );
 
 		while( sibling = node->nextSibling )
 		{
@@ -536,42 +559,22 @@ void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback )
 	}
 }
 
-void NodeTreeUpdateTransforms( Node *root )
-{
-	Node3D *sibling ;
-
-	// TODO relative transforms
-
-	while( root )
-	{
-		NodeUpdateTransforms( root );
-
-		while( sibling = root->nextSibling )
-		{
-			NodeTreeUpdateTransforms( sibling );
-		}
-
-		root = root->firstChild ;
-	}
-}
-
 // Draw a node's tree and apply relative transforms :
 void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 {
 	Node3D *sibling ;
+	Node3D *node = root ;
 
-	// TODO relative transforms
-
-	while( root )
+	while( node )
 	{
-		DrawNodeInFrustum( root , frustum );
+		DrawNodeInFrustum( node , frustum );
 
-		while( sibling = root->nextSibling )
+		while( sibling = node->nextSibling )
 		{
 			DrawNodeTreeInFrustum( sibling , frustum );
 		}
 
-		root = root->firstChild ;
+		node = node->firstChild ;
 	}
 }
 
