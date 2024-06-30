@@ -64,6 +64,8 @@ typedef struct Node3D
 	Vector3    scale    ;
 	Matrix     rotation ; // Contains the rotation matrix only
 
+	int        positionRelativeToBoneId ;
+
 	Matrix transform ; // Computed using position, scale and rotation 
 
 	Color tint ;
@@ -141,6 +143,7 @@ RLAPI Node3D NodeAsRoot();
 RLAPI Node3D NodeAsModel( Model *model );
 
 RLAPI void NodeAttachChild( Node *parent , Node *child );
+RLAPI void NodeAttachChildToBone( Node *parent , Node *child , char *boneName );
 RLAPI void NodeDetachBranch( Node *node );
 RLAPI void NodeRemove( Node *node );
 
@@ -201,6 +204,8 @@ Node3D NodeAsRoot()
 	node.position = Vector3Zero();
 	node.rotation = MatrixIdentity();
 	node.scale    = Vector3One();
+
+	node.positionRelativeToBoneId = -1 ;
 
 	node.transform = MatrixIdentity();
 
@@ -297,6 +302,8 @@ Matrix MatrixRotation( Matrix m )
 
 void NodeFromWorldToParentSpace( Node *node , Node *parent )
 {
+	NodeUpdateTransforms( node );
+
 	node->transform = MatrixFromGlobalToLocalSpace( node->transform , parent->transform );
 
 	NodeUnpackTransforms( node );
@@ -304,6 +311,8 @@ void NodeFromWorldToParentSpace( Node *node , Node *parent )
 
 void NodeFromParentToWorldSpace( Node *node , Node *parent )
 {
+	NodeUpdateTransforms( node );
+
 	node->transform = MatrixFromLocalToGlobalSpace( node->transform , parent->transform );
 
 	NodeUnpackTransforms( node );
@@ -366,6 +375,7 @@ void NodeDetachBranch( Node *node )
 	node->parent = NULL;
 	node->nextSibling = NULL ;
 	node->prevSibling = NULL ;
+	node->positionRelativeToBoneId = -1 ;
 }
 
 // Remove a node from its parent, siblings and children
@@ -441,6 +451,24 @@ void NodeRemove( Node *node )
 	node->prevSibling = NULL ;
 	node->nextSibling = NULL ;
 	node->firstChild  = NULL ;
+	node->positionRelativeToBoneId = -1 ;
+}
+
+void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
+{
+	NodeAttachChild( parent , child );
+
+	if ( ! parent->model ) return ;
+
+	for( int i = 0 ; i < parent->model->boneCount ; i++ )
+	{
+		if ( strcmp( parent->model->bones[i].name , boneName ) == 0 )
+		{
+			child->position = parent->model->bindPose[i].translation ;
+			child->positionRelativeToBoneId = i ;
+			break;
+		}
+	}
 }
 
 void NodeAttachChild( Node *parent , Node *child )
@@ -497,17 +525,23 @@ void NodeUpdateTransforms( Node *node )
 	// Calculate node's transformation matrix
 	// Get transform matrix (rotation -> scale -> translation)
 
+
 	Matrix matScale       = MatrixScale( node->scale.x , node->scale.y , node->scale.z );
 	Matrix matTranslation = MatrixTranslate( node->position.x , node->position.y , node->position.z );
 
 	node->transform = MatrixMultiply( MatrixMultiply( matScale , node->rotation ) , matTranslation );
 
-	if ( node->model )
+/*	if ( node->model ) TODO ???
 	{
+		print_Matrix( node->transform , "node->transform (before)" );
+		print_Matrix( node->model->transform , "node->model->transform" );
+
 		// Combine model transforms with node transforms
 		node->transform = MatrixMultiply( node->model->transform , node->transform );
-	}
 
+		print_Matrix( node->transform , "node->transform (after)" );
+	}
+*/
 	if ( node->parent )
 	{
 		node->transform = MatrixMultiply( node->transform , node->parent->transform );
