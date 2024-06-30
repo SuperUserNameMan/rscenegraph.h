@@ -517,6 +517,7 @@ void NodeAttachChild( Node *parent , Node *child )
 
 			child->nextSibling = parent->firstChild ;
 			parent->firstChild->prevSibling = child ;
+			parent->firstChild = child ;
 		}
 
 		// Move transforms to parent's space :
@@ -572,7 +573,8 @@ void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , void *
 	{
 		callback( node , userData );
 
-		while( sibling = node->nextSibling )
+		sibling = node ;
+		while( sibling = sibling->nextSibling )
 		{
 			NodeTreeTraversal( sibling , callback , userData );
 		}
@@ -590,7 +592,8 @@ void NodeTreeUpdateTransforms( Node *root )
 	{
 		NodeUpdateTransforms( node );
 
-		while( sibling = node->nextSibling )
+		sibling = node ;
+		while( sibling = sibling->nextSibling )
 		{
 			NodeTreeUpdateTransforms( sibling );
 		}
@@ -609,7 +612,8 @@ void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
 	{
 		DrawNodeInFrustum( node , frustum );
 
-		while( sibling = node->nextSibling )
+		sibling = node ;
+		while( sibling = sibling->nextSibling )
 		{
 			DrawNodeTreeInFrustum( sibling , frustum );
 		}
