@@ -139,8 +139,8 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 RLAPI Node3D NodeAsRoot();
 RLAPI Node3D NodeAsModel( Model *model );
 
-RLAPI void NodeAttachChild( Node *parent , Node *child );
-RLAPI void NodeAttachChildToBone( Node *parent , Node *child , char *boneName );
+RLAPI void NodeAttachTo( Node *child , Node *parent );
+RLAPI void NodeAttachToBone( Node *child, Node *parent , char *boneName );
 RLAPI void NodeDetachBranch( Node *node );
 RLAPI void NodeRemove( Node *node );
 
@@ -381,7 +381,7 @@ void NodeRemove( Node *node )
 			// Attach the child to the new parent :
 			// NOTE : The child will be automaticly detached from its sibling chain in the node.
 
-			NodeAttachChild( parent , child ); 
+			NodeAttachTo( child, parent ); 
 
 			// Proceed with the next node's child :
 			// NOTE : the node's firstChild was updated with next child in the sibling chain.
@@ -416,7 +416,7 @@ void NodeRemove( Node *node )
 	node->positionRelativeToBoneId = -1 ;
 }
 
-void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
+void NodeAttachToBone( Node *child , Node *parent , char *boneName )
 {
 	if ( child->parent != NULL )
 	{
@@ -437,11 +437,11 @@ void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 		}
 	}
 
-	NodeAttachChild( parent , child );
+	NodeAttachTo( child, parent );
 }
 
 
-void NodeAttachChild( Node *parent , Node *child )
+void NodeAttachTo( Node *child , Node *parent )
 {
 
 	//                                [parent ]--> *firstChild --> ?
