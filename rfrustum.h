@@ -108,7 +108,8 @@ typedef struct Node3D
 	// Frustum visibility ...
 
 	Frustum * lastFrustum ; // Points the last frustum relative to which the node was drawn
-	bool insideFrustum ; // Tell if the node was visible in the frustum
+	bool insideFrustum ; // Tells if the node was visible in the frustum
+	float distanceToCamera ; // Tells at which distance the node was from the camera 
 
 	// Animation stuff ...
 
@@ -884,6 +885,7 @@ bool NodeDrawInFrustum( Node *node , Frustum *frustum )
 {
 	node->lastFrustum = frustum ;
 	node->insideFrustum = false ;
+	node->distanceToCamera = Vector3Distance( node->position , frustum->camera->position );
 
 	if ( node->model )
 	{
