@@ -242,9 +242,9 @@ RLAPI void NodeUpdateAnimationTimeline( Node *node , float delta );
 
 // Node drawing :
 
-RLAPI void NodeDrawInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum
+RLAPI bool NodeDrawInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum and return true, else false
 #define DrawNodeInFrustum NodeDrawInFrustum
-RLAPI void NodeTreeDrawInFrustum( Node *root , Frustum *frustum ); // Draw the node's tree hierachy that is visible inside the frustum
+RLAPI int NodeTreeDrawInFrustum( Node *root , Frustum *frustum ); // Draw the node's tree hierachy that is visible inside the frustum, and return how mùany nodes were drawn
 #define DrawNodeTreeInFrustum NodeTreeDrawInFrustum 
 
 #if defined(__cplusplus)
@@ -713,24 +713,26 @@ void NodeTreeUpdateTransforms( Node *root )
 	}
 }
 
-// Draw a node's tree and apply relative transforms :
-void NodeTreeDrawInFrustum( Node *root , Frustum *frustum )
+int NodeTreeDrawInFrustum( Node *root , Frustum *frustum )
 {
 	Node3D *sibling ;
 	Node3D *node = root ;
+	int nodeDrawn = 0 ;
 
 	while( node )
 	{
-		NodeDrawInFrustum( node , frustum );
+		if ( NodeDrawInFrustum( node , frustum ) ) nodeDrawn++;
 
 		sibling = node ;
 		while( sibling = sibling->nextSibling )
 		{
-			NodeTreeDrawInFrustum( sibling , frustum );
+			nodeDrawn += NodeTreeDrawInFrustum( sibling , frustum );
 		}
 
 		node = node->firstChild ;
 	}
+
+	return nodeDrawn;
 }
 
 
@@ -878,7 +880,7 @@ void NodeMoveForward( Node *node , float distance )
 	node->position.z += node->transform.m10 * distance ;
 }
 
-void NodeDrawInFrustum( Node *node , Frustum *frustum )
+bool NodeDrawInFrustum( Node *node , Frustum *frustum )
 {
 	node->lastFrustum = frustum ;
 	node->insideFrustum = false ;
@@ -887,7 +889,7 @@ void NodeDrawInFrustum( Node *node , Frustum *frustum )
 	{
 		// Frustum clipping :
 
-		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return;
+		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false ;
 
 		// Draw the meshes :
 
@@ -905,9 +907,11 @@ void NodeDrawInFrustum( Node *node , Frustum *frustum )
 			DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
 			node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
 		}
+
+		node->insideFrustum = true ;
 	}
 
-	node->insideFrustum = true ;
+	return node->insideFrustum ; 
 }
 
 
