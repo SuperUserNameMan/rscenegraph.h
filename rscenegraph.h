@@ -1,5 +1,5 @@
-#ifndef RFRUSTUM_H
-#define RFRUSTUM_H
+#ifndef RSCENEGRAPH_H
+#define RSCENEGRAPH_H
 
 #include <raylib.h>
 #include <rlgl.h>
@@ -257,9 +257,9 @@ RLAPI int NodeTreeDrawInFrustum( Node *root , Frustum *frustum ); // Draw the no
 }
 #endif
 
-#endif // RFRUSTUM_H
+#endif // RSCENEGRAPH_H
 
-#if defined(RFRUSTUM_IMPLEMENTATION)
+#if defined(RSCENEGRAPH_IMPLEMENTATION)
 
 
 Matrix MatrixNormalize( Matrix m )
@@ -1178,4 +1178,4 @@ bool FrustumContainsBox( Frustum *frustum , BoundingBox box )
 	return true;
 }
 
-#endif //RFRUSTUM_IMPLEMENTATION
+#endif //RSCENEGRAPH_IMPLEMENTATION
