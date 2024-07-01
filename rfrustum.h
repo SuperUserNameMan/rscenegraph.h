@@ -56,22 +56,35 @@ typedef struct Frustum
 
 } Frustum;
 
+
+typedef enum
+{
+	NODE_ANIMATION_EVENT_LOOP = 1 ,
+	NODE_ANIMATION_EVENT_COMPLETE = 2 ,
+
+} NodeAnimationEvent;
+
+
 typedef struct Node3D Node3D;
+typedef struct Node3D Node;
+
+typedef void (*NodeAnimationEventCallback)( Node *node , NodeAnimationEvent event );
 
 typedef struct Node3D 
 {
 	Model *model ;
 
+	Color tint ;
+
+	// Node transforms :
 	Vector3    position ;
 	Vector3    scale    ;
-	Matrix     rotation ; // Contains the rotation matrix only
+	Matrix     rotation ; // Contains the rotation matrix only // TODO use Quaternion instead ?
 
-	int        positionRelativeToBoneId ;
-	char      *positionRelativeToBoneName ;
+	int        positionRelativeToParentBoneId ;   // TODO : explain
+	char      *positionRelativeToParentBoneName ;
 
 	Matrix transform ; // Computed using position, scale and rotation and parent's transform /!\
-
-	Color tint ;
 
 	// Untransformed boundings are in model's space
 	// and are computed once in LoadNodeFromModel()
@@ -85,7 +98,6 @@ typedef struct Node3D
 	Vector3 transformedCenter ;
 	float transformedRadius ;
 
-
 	// Basic scenegraph bindings ...
 
 	Node3D *parent;
@@ -98,11 +110,24 @@ typedef struct Node3D
 	Frustum * lastFrustum ; // Points the last frustum relative to which the node was drawn
 	bool insideFrustum ; // Tell if the node was visible in the frustum
 
+	// Animation stuff ...
+
+	ModelAnimation *anims ;
+	int animsCount ;           // How many anims in the anims list
+	int animId ;               // Id of the currently selected anim
+
+	float animPosition;      // Position in the animation timeline (will be converted to int for current frame)
+	float animSpeed;         // Speed at which animPosition is updated by NodeUpdateAnimation(delta)
+	int animRemainingLoops ; // How many time do we want to loop the currently selected animation ? (-1 inifinity)
+
+	NodeAnimationEventCallback animEventCallback ; // If set, will be called on animation events
+
+	// User data :
 	void *userData ;
 
 } Node3D;
 
-typedef struct Node3D Node;
+
 
 
 #if defined(__cplusplus)
@@ -130,8 +155,9 @@ RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Retur
 
 // Frustum stuff :
 
-RLAPI Frustum CameraGetFrustum( Camera *camera , float aspect );
-#define FrustumFromCamera CameraGetFrustum
+RLAPI Frustum GetCameraFrustum( Camera *camera , float aspect );
+#define FrustumFromCamera GetCameraFrustum
+
 RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
 RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
@@ -143,47 +169,83 @@ RLAPI Node3D NodeAsGroup();
 #define NodeAsRoot NodeAsGroup
 RLAPI Node3D NodeAsModel( Model *model );
 
-RLAPI void NodeAttachTo( Node *child , Node *parent );
-RLAPI void NodeAttachToBone( Node *child , Node *parent , char *boneName );
+RLAPI void NodeAttachToParent( Node *child , Node *parent );
+#define AttachNodeToParent NodeAttachToParent
+RLAPI void NodeAttachToParentBone( Node *child , Node *parent , char *boneName );
+#define AttachNodeToParentBone NodeAttachToParentBone
 RLAPI void NodeDetachBranch( Node *node ); // Detach the node and its children from the tree.
+#define DetachNodeBranch NodeDetachBranch
 RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
+#define RemoveNode NodeRemove
 
 typedef void (*NodeTreeTraversalCallback)( Node *node , void *userData );
 
 RLAPI void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , void *userData );
+#define TraverseNodeTree NodeTreeTraversal
 
 // Node's transforms :
 
 RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matrix of every nodes in the tree at once
+#define UpdateNodeTreeTransforms NodeTreeUpdateTransforms
 
 RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node from its position, scale and rotation
+#define UpdateNodeTransforms NodeUpdateTransforms
 
 RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
+#define UnpackNodeTransforms NodeUnpackTransforms
 
 
 // NOTE : the transforms below are not immediately effective, till the transform matrix is updated.
 
 RLAPI void NodeSetPosition( Node *node , Vector3 pos );
+#define SetNodePosition NodeSetPosition
 
 RLAPI void NodeRotate( Node *node , Vector3 axis , float angle );
+#define RotateNode NodeRotate
 
 RLAPI void NodeRotateX( Node *node , float angle ); // Rotate along world's X axis
 RLAPI void NodeRotateY( Node *node , float angle ); // Rotate along world's Y axis
 RLAPI void NodeRotateZ( Node *node , float angle ); // Rotate along world's Z axis
 
-RLAPI void NodeRotateAlongX( Node *node , float angle ); // Rotate along its own X axis
-RLAPI void NodeRotateAlongY( Node *node , float angle ); // Rotate along its own Y axis
-RLAPI void NodeRotateAlongZ( Node *node , float angle ); // Rotate along its own Z axis
+RLAPI void NodePitch( Node *node , float angle ); // Rotate along its own X axis
+#define PitchNode NodePitch
+#define RotateNodeAlongOwnX NodePitch
+#define NodeRotateAlongOwnX NodePitch
+RLAPI void NodeYaw( Node *node , float angle ); // Rotate along its own Y axis
+#define YawNode NodeYaw
+#define RotateNodeAlongOwnY NodeYaw
+#define NodeRotateAlongOwnY NodeYaw
+RLAPI void NodeRoll( Node *node , float angle ); // Rotate along its own Z axis
+#define RollNode NodeRoll
+#define RotateNodeAlongOwnZ NodeRoll
+#define NodeRotateAlongOwnZ NodeRoll
 
-RLAPI void NodeMoveAlongX( Node *node , float distance ); // Move in direction of its own X axis
-RLAPI void NodeMoveAlongY( Node *node , float distance ); // Move in direction of its own Y axis
-RLAPI void NodeMoveAlongZ( Node *node , float distance ); // Move in direction of its own Z axis
+RLAPI void NodeMoveForward( Node *node , float distance ); // Move in direction of its own Z axis
+#define MoveNodeForward NodeMoveForward
+#define NodeMoveTowardOwnZ NodeMoveForward
+#define MoveNodeTowardOwnZ NodeMoveForward
+RLAPI void NodeMoveUpward( Node *node , float distance ); // Move in direction of its own Y axis
+#define MoveNodeUpward NodeMoveUpward
+#define NodeMoveTowardOwnY NodeMoveUpward
+#define MoveNodeTowardOwnY NodeMoveUpward
+RLAPI void NodeMoveSideward( Node *node , float distance ); // Move in direction of its own X axis
+#define MoveNodeSideward NodeMoveSideward
+#define NodeStrafe NodeMoveSideward
+#define NodeMoveTowardOwnX NodeMoveSideward
+#define MoveNodeTowardOwnX NodeMoveSideward
 
+
+// Node animations :
+
+RLAPI void NodeUpdateAnimationTimeline( Node *node , float delta );
+#define UpdateNodeAnimationTimeline NodeUpdateAnimationTimeline
 
 // Node drawing :
 
-RLAPI void DrawNodeInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum
-RLAPI void DrawNodeTreeInFrustum( Node *root , Frustum *frustum ); // Draw the node's tree hierachy that is visible inside the frustum
+RLAPI void NodeDrawInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum
+#define DrawNodeInFrustum NodeDrawInFrustum
+RLAPI void NodeTreeDrawInFrustum( Node *root , Frustum *frustum ); // Draw the node's tree hierachy that is visible inside the frustum
+#define DrawNodeTreeInFrustum NodeTreeDrawInFrustum 
 
 #if defined(__cplusplus)
 }
@@ -192,68 +254,6 @@ RLAPI void DrawNodeTreeInFrustum( Node *root , Frustum *frustum ); // Draw the n
 #endif // RFRUSTUM_H
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
-
-Node3D NodeAsGroup()
-{
-	Node3D node ;
-
-	node.model = NULL ;
-	node.tint = WHITE ;
-
-	node.position = Vector3Zero();
-	node.rotation = MatrixIdentity();
-	node.scale    = Vector3One();
-
-	node.positionRelativeToBoneId = -1 ;
-	node.positionRelativeToBoneName = NULL ;
-
-	node.transform = MatrixIdentity();
-
-	node.untransformedBox.min = Vector3Zero();
-	node.untransformedBox.max = Vector3Zero();
-
-	node.untransformedCenter = Vector3Zero();
-	node.untransformedRadius = 0.0f;
-
-	node.parent = NULL ;
-	node.firstChild = NULL ;
-	node.nextSibling = NULL ;
-	node.prevSibling = NULL ;
-
-	node.lastFrustum = NULL ;
-	node.insideFrustum = false ;
-
-	node.userData = NULL ;
-
-	return node;
-}
-
-
-Node3D NodeAsModel( Model *model )
-{
-	Node3D node = NodeAsRoot();
-
-	node.model = model ;
-
-	// Get the untransformed boundings :
-
-	Matrix temp = model->transform ;
-	model->transform = MatrixIdentity();
-	node.untransformedBox = GetModelBoundingBox( *model );
-	model->transform = temp;
-
-	node.untransformedCenter.x = ( node.untransformedBox.min.x + node.untransformedBox.max.x )*0.5f ;
-	node.untransformedCenter.y = ( node.untransformedBox.min.y + node.untransformedBox.max.y )*0.5f ;
-	node.untransformedCenter.z = ( node.untransformedBox.min.z + node.untransformedBox.max.z )*0.5f ;
-
-	node.untransformedRadius = Vector3Distance( node.untransformedBox.min , node.untransformedBox.max )*0.5f ;
-
-	// Update transform matrix and transformed boundings :
-
-	NodeUpdateTransforms( &node );
-
-	return node;
-}
 
 
 Matrix MatrixNormalize( Matrix m )
@@ -285,8 +285,79 @@ Matrix MatrixRotation( Matrix m )
 	return MatrixNormalize( m );
 }
 
+Node3D NodeAsGroup()
+{
+	Node3D node ;
 
-// Convert node's transform matrix back into position, scale, rotation ...
+	node.model = NULL ;
+
+	node.tint = WHITE ;
+
+	node.position = Vector3Zero();
+	node.rotation = MatrixIdentity();
+	node.scale    = Vector3One();
+
+	node.positionRelativeToParentBoneId = -1 ;
+	node.positionRelativeToParentBoneName = NULL ;
+
+	node.transform = MatrixIdentity();
+
+	node.untransformedBox.min = Vector3Zero();
+	node.untransformedBox.max = Vector3Zero();
+
+	node.untransformedCenter = Vector3Zero();
+	node.untransformedRadius = 0.0f;
+
+	node.parent = NULL ;
+	node.firstChild = NULL ;
+	node.nextSibling = NULL ;
+	node.prevSibling = NULL ;
+
+	node.lastFrustum = NULL ;
+	node.insideFrustum = false ;
+
+	node.anims = NULL ;
+	node.animsCount = 0 ;
+	node.animId = -1;
+	node.animPosition = 0.0f;
+	node.animSpeed = 1.0f;
+	node.animRemainingLoops = -1 ;
+	node.animEventCallback = NULL ;
+
+	node.userData = NULL ;
+
+	return node;
+}
+
+
+Node3D NodeAsModel( Model *model )
+{
+	Node3D node = NodeAsRoot();
+
+	node.model = model ;
+
+	// Get the untransformed boundings :
+
+	{
+		Matrix temp = model->transform ;
+		model->transform = MatrixIdentity();
+		node.untransformedBox = GetModelBoundingBox( *model );
+		model->transform = temp;
+	}
+
+	node.untransformedCenter.x = ( node.untransformedBox.min.x + node.untransformedBox.max.x )*0.5f ;
+	node.untransformedCenter.y = ( node.untransformedBox.min.y + node.untransformedBox.max.y )*0.5f ;
+	node.untransformedCenter.z = ( node.untransformedBox.min.z + node.untransformedBox.max.z )*0.5f ;
+
+	node.untransformedRadius = Vector3Distance( node.untransformedBox.min , node.untransformedBox.max )*0.5f ;
+
+	// Update transform matrix and transformed boundings :
+
+	NodeUpdateTransforms( &node );
+
+	return node;
+}
+
 void NodeUnpackTransforms( Node *node )
 {
 	node->position = (Vector3){ node->transform.m12 , node->transform.m13 , node->transform.m14 };
@@ -299,7 +370,6 @@ void NodeUnpackTransforms( Node *node )
 
 	node->rotation = MatrixRotation( node->transform );
 }
-
 
 // Detach a node's branch from its parent
 void NodeDetachBranch( Node *node )
@@ -345,8 +415,8 @@ void NodeDetachBranch( Node *node )
 	node->parent = NULL;
 	node->nextSibling = NULL ;
 	node->prevSibling = NULL ;
-	node->positionRelativeToBoneId = -1 ;
-	node->positionRelativeToBoneName = NULL ;
+	node->positionRelativeToParentBoneId = -1 ;
+	node->positionRelativeToParentBoneName = NULL ;
 }
 
 // Remove a node from its parent, siblings and children
@@ -389,7 +459,7 @@ void NodeRemove( Node *node )
 			// Attach the child to the new parent :
 			// NOTE : The child will be automaticly detached from its sibling chain in the node.
 
-			NodeAttachTo( child, parent ); 
+			NodeAttachToParent( child, parent ); 
 
 			// Proceed with the next node's child :
 			// NOTE : the node's firstChild was updated with next child in the sibling chain.
@@ -421,11 +491,11 @@ void NodeRemove( Node *node )
 	node->prevSibling = NULL ;
 	node->nextSibling = NULL ;
 	node->firstChild  = NULL ;
-	node->positionRelativeToBoneId = -1 ;
-	node->positionRelativeToBoneName = NULL ;
+	node->positionRelativeToParentBoneId = -1 ;
+	node->positionRelativeToParentBoneName = NULL ;
 }
 
-void NodeAttachToBone( Node *child , Node *parent , char *boneName )
+void NodeAttachToParentBone( Node *child , Node *parent , char *boneName )
 {
 	if ( child->parent != NULL )
 	{
@@ -439,19 +509,19 @@ void NodeAttachToBone( Node *child , Node *parent , char *boneName )
 			if ( TextIsEqual( parent->model->bones[i].name , boneName ) )
 			{
 				child->position = parent->model->bindPose[i].translation ;
-				child->positionRelativeToBoneId = i ;
-				child->positionRelativeToBoneName = parent->model->bones[i].name ;
+				child->positionRelativeToParentBoneId = i ;
+				child->positionRelativeToParentBoneName = parent->model->bones[i].name ;
 				NodeUpdateTransforms( child );
 				break;
 			}
 		}
 	}
 
-	NodeAttachTo( child, parent );
+	NodeAttachToParent( child, parent );
 }
 
 
-void NodeAttachTo( Node *child , Node *parent )
+void NodeAttachToParent( Node *child , Node *parent )
 {
 
 	//                                [parent ]--> *firstChild --> ?
@@ -503,12 +573,76 @@ void NodeAttachTo( Node *child , Node *parent )
 	}
 }
 
+// Update the current animation timeline and call the event callback if set.
+void NodeUpdateAnimationTimeline( Node *node , float delta )
+{
+	if ( node->animId < 0 ) return ;
+	if ( node->animId >= node->animsCount ) return ;
+	if ( node->animPosition < 0.0f ) return ;
+
+	// Are we done already ?
+
+	if ( node->animRemainingLoops == 0 ) return ;
+
+	// Update the position in the timeline :
+
+	node->animPosition += delta * node->animSpeed ;
+
+	// Calculate the frame :
+	
+	int frame = (int)node->animPosition;
+
+	// If reaching the end of the animation :
+
+	if ( frame >= node->anims[ node->animId ].frameCount )
+	{
+		// We're going to rewind the animation.
+		// But because the position on the timeline is a float, we must keep the decimal part.
+
+		node->animPosition = fmodf( node->animPosition , (float)node->anims[ node->animId ].frameCount );
+
+		// Callback events :
+
+		if ( node->animEventCallback != NULL )
+		{
+			// The number of remaining loops will be decrement later,
+			// and the function already returned if it was 0.
+			// So, here, either it is a positive number or a negative one.
+			// Negative means infinite loop.
+			// Positive tells how many loop are remaining.
+			// If it is 1, then it is the last one, and the anim is complete.
+
+			if ( node->animRemainingLoops != 1 ) // Not the last one
+			{
+				node->animEventCallback( node , NODE_ANIMATION_EVENT_LOOP );
+			}
+			else // The last one :
+			{
+				node->animEventCallback( node , NODE_ANIMATION_EVENT_COMPLETE );
+			}
+		}
+	}
+
+	// If remaining loop is negative, it means we want infinite loop.
+	// So we decrement it only if greater than 0.
+
+	if ( node->animRemainingLoops > 0 )
+	{
+		node->animRemainingLoops--;
+	}
+}
 
 void NodeUpdateTransforms( Node *node )
 {
+	// Update animations :
+
+	if ( node->model != NULL && node->anims != NULL && node->animId >= 0 && node->animId < node->animsCount )
+	{
+		UpdateModelAnimation( *node->model , node->anims[ node->animId ] , (int)node->animPosition );
+	}
+
 	// Calculate node's transformation matrix
 	// Get transform matrix (rotation -> scale -> translation)
-
 
 	Matrix matScale       = MatrixScale( node->scale.x , node->scale.y , node->scale.z );
 	Matrix matTranslation = MatrixTranslate( node->position.x , node->position.y , node->position.z );
@@ -580,19 +714,19 @@ void NodeTreeUpdateTransforms( Node *root )
 }
 
 // Draw a node's tree and apply relative transforms :
-void DrawNodeTreeInFrustum( Node *root , Frustum *frustum )
+void NodeTreeDrawInFrustum( Node *root , Frustum *frustum )
 {
 	Node3D *sibling ;
 	Node3D *node = root ;
 
 	while( node )
 	{
-		DrawNodeInFrustum( node , frustum );
+		NodeDrawInFrustum( node , frustum );
 
 		sibling = node ;
 		while( sibling = sibling->nextSibling )
 		{
-			DrawNodeTreeInFrustum( sibling , frustum );
+			NodeTreeDrawInFrustum( sibling , frustum );
 		}
 
 		node = node->firstChild ;
@@ -692,7 +826,7 @@ void NodeRotate( Node *node , Vector3 axis , float angle )
 	node->rotation = MatrixMultiply( node->rotation , MatrixRotate( axis , angle ) );
 }
 
-void NodeRotateAlongX( Node *node , float angle )
+void NodePitch( Node *node , float angle )
 {
 	Vector3 axis = { 
 		node->transform.m0 , 
@@ -702,7 +836,7 @@ void NodeRotateAlongX( Node *node , float angle )
 	NodeRotate( node , axis , angle );
 }
 
-void NodeRotateAlongY( Node *node , float angle )
+void NodeYaw( Node *node , float angle )
 {
 	Vector3 axis = { 
 		node->transform.m4 , 
@@ -712,7 +846,7 @@ void NodeRotateAlongY( Node *node , float angle )
 	NodeRotate( node , axis , angle );
 }
 
-void NodeRotateAlongZ( Node *node , float angle )
+void NodeRoll( Node *node , float angle )
 {
 	Vector3 axis = { 
 		node->transform.m8 , 
@@ -722,14 +856,14 @@ void NodeRotateAlongZ( Node *node , float angle )
 	NodeRotate( node , axis , angle );
 }
 
-void NodeMoveAlongX( Node *node , float distance )
+void NodeMoveSideward( Node *node , float distance )
 {
 	node->position.x += node->transform.m0 * distance ;
 	node->position.y += node->transform.m1 * distance ;
 	node->position.z += node->transform.m2 * distance ;
 }
 
-void NodeMoveAlongY( Node *node , float distance )
+void NodeMoveUpward( Node *node , float distance )
 {
 	node->position.x += node->transform.m4 * distance ;
 	node->position.y += node->transform.m5 * distance ;
@@ -737,15 +871,14 @@ void NodeMoveAlongY( Node *node , float distance )
 }
 
 
-void NodeMoveAlongZ( Node *node , float distance )
+void NodeMoveForward( Node *node , float distance )
 {
 	node->position.x += node->transform.m8 * distance ;
 	node->position.y += node->transform.m9 * distance ;
 	node->position.z += node->transform.m10 * distance ;
 }
 
-// Draw a single node if it is inside the frustum :
-void DrawNodeInFrustum( Node *node , Frustum *frustum )
+void NodeDrawInFrustum( Node *node , Frustum *frustum )
 {
 	node->lastFrustum = frustum ;
 	node->insideFrustum = false ;
