@@ -70,6 +70,8 @@ typedef struct Node3D Node;
 
 typedef void (*NodeAnimationEventCallback)( Node *node , NodeAnimationEvent event );
 
+
+
 typedef struct Node3D 
 {
 	Model *model ;
@@ -109,7 +111,11 @@ typedef struct Node3D
 
 	Frustum * lastFrustum ; // Points the last frustum relative to which the node was drawn
 	bool insideFrustum ; // Tells if the node was visible in the frustum
-	float distanceToCamera ; // Tells at which distance the node was from the camera 
+	float distanceToCamera ; // Tells at which distance the node was from the camera
+
+	Node3D *nextLOD ;
+	float nextDistance ;
+	Node3D *activeLOD ;
 
 	// Animation stuff ...
 
@@ -170,10 +176,9 @@ RLAPI Node3D NodeAsGroup();
 #define NodeAsRoot NodeAsGroup
 RLAPI Node3D NodeAsModel( Model *model );
 
-RLAPI void NodeAttachToParent( Node *child , Node *parent );
-#define AttachNodeToParent NodeAttachToParent
-RLAPI void NodeAttachToParentBone( Node *child , Node *parent , char *boneName );
-#define AttachNodeToParentBone NodeAttachToParentBone
+RLAPI void NodeAttachChild( Node *parent, Node *child );
+RLAPI void NodeAttachChildToBone( Node *parent, Node *child , char *boneName );
+
 RLAPI void NodeDetachBranch( Node *node ); // Detach the node and its children from the tree.
 #define DetachNodeBranch NodeDetachBranch
 RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
@@ -314,6 +319,10 @@ Node3D NodeAsGroup()
 	node.nextSibling = NULL ;
 	node.prevSibling = NULL ;
 
+	node.nextLOD = NULL ;
+	node.nextDistance = 0.0f ;
+	node.activeLOD = NULL ;
+
 	node.lastFrustum = NULL ;
 	node.insideFrustum = false ;
 
@@ -357,6 +366,81 @@ Node3D NodeAsModel( Model *model )
 	NodeUpdateTransforms( &node );
 
 	return node;
+}
+
+void NodeRemoveLOD( Node *node , Node *lod )
+{
+	Node3D *depth = node ;
+
+	while( depth->nextLOD != NULL && depth->nextLOD != lod )
+	{
+		depth = depth->nextLOD ;
+	}
+
+	if ( depth->nextLOD != NULL && depth->nextLOD == lod )
+	{
+		depth->nextDistance = lod->nextDistance ;
+		depth->nextLOD = lod->nextLOD ;
+	}
+
+	lod->nextLOD = NULL ;
+}
+
+void NodeInsertLOD( Node *node , Node *lod , float distance )
+{
+	if ( node->nextLOD == NULL )
+	{
+		node->nextLOD = lod ;
+		node->nextDistance = distance ;
+	}
+	else
+	{
+		// We need to scan the LOD chain to find where to insert our new LOD.
+
+		Node3D *link = node ; 
+		while( link->nextLOD != NULL && link->nextDistance < distance )
+		{
+			link = link->nextLOD ;
+		}
+
+		// Reached the end ?
+		if ( link->nextLOD == NULL )
+		{
+			// Just add the lod at this end :
+			link->nextLOD = lod ;
+			link->nextDistance = distance ;
+		}
+		else // new LOD is closer than current LOD ?
+		if ( link->nextDistance > distance )
+		{
+			// We need to insert the new lod into the chain :
+
+			// 1) connect the rest of the chain to the new lod :
+			lod->nextLOD = link->nextLOD ;
+			lod->nextDistance = link->nextDistance ;
+
+			// 2) connect the new lod to the head of the chain :
+			link->nextLOD = lod ;
+			link->nextDistance = distance ;
+		}
+		else // Same distance ?
+		{
+			// We need to replace the current LOD with new LOD.
+
+			// 1) Connect the tail of the LOD chain to the new LOD by skipping the LOD we want to replace :
+			lod->nextLOD      = link->nextLOD->nextLOD ;
+			lod->nextDistance = link->nextLOD->nextDistance ;
+
+			// Disconnect the old LOD from the rest of the chain
+			link->nextLOD->nextLOD = NULL ;
+
+			// Connect the new LOD to the head chain :
+			link->nextLOD = lod ;
+		}
+	}
+
+	// Unless there is a bug in my algorithm
+	// the new LOD should be in place
 }
 
 void NodeUnpackTransforms( Node *node )
@@ -460,7 +544,7 @@ void NodeRemove( Node *node )
 			// Attach the child to the new parent :
 			// NOTE : The child will be automaticly detached from its sibling chain in the node.
 
-			NodeAttachToParent( child, parent ); 
+			NodeAttachChild( parent , child ); 
 
 			// Proceed with the next node's child :
 			// NOTE : the node's firstChild was updated with next child in the sibling chain.
@@ -496,7 +580,7 @@ void NodeRemove( Node *node )
 	node->positionRelativeToParentBoneName = NULL ;
 }
 
-void NodeAttachToParentBone( Node *child , Node *parent , char *boneName )
+void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 {
 	if ( child->parent != NULL )
 	{
@@ -518,11 +602,11 @@ void NodeAttachToParentBone( Node *child , Node *parent , char *boneName )
 		}
 	}
 
-	NodeAttachToParent( child, parent );
+	NodeAttachChild( parent, child );
 }
 
 
-void NodeAttachToParent( Node *child , Node *parent )
+void NodeAttachChild( Node *parent, Node *child )
 {
 
 	//                                [parent ]--> *firstChild --> ?
@@ -577,6 +661,9 @@ void NodeAttachToParent( Node *child , Node *parent )
 // Update the current animation timeline and call the event callback if set.
 void NodeUpdateAnimationTimeline( Node *node , float delta )
 {
+	// TODO? Update the timeline of the active lod only ? of the main LOD only ? or of all lods ?
+	//if ( node->activeLOD ) node = node->activeLOD ; 
+
 	if ( node->animId < 0 ) return ;
 	if ( node->animId >= node->animsCount ) return ;
 	if ( node->animPosition < 0.0f ) return ;
@@ -639,7 +726,10 @@ void NodeUpdateTransforms( Node *node )
 
 	if ( node->model != NULL && node->anims != NULL && node->animId >= 0 && node->animId < node->animsCount )
 	{
-		UpdateModelAnimation( *node->model , node->anims[ node->animId ] , (int)node->animPosition );
+		if ( node->activeLOD == NULL || node->activeLOD == node )
+		{
+			UpdateModelAnimation( *node->model , node->anims[ node->animId ] , (int)node->animPosition );
+		}
 	}
 
 	// Calculate node's transformation matrix
@@ -885,33 +975,50 @@ bool NodeDrawInFrustum( Node *node , Frustum *frustum )
 {
 	node->lastFrustum = frustum ;
 	node->insideFrustum = false ;
+
 	node->distanceToCamera = Vector3Distance( node->position , frustum->camera->position );
 
-	if ( node->model )
+	// Find the active LOD :
+
+	node->activeLOD = node ;
+	while( node->activeLOD->nextLOD != NULL && node->activeLOD->nextDistance < node->distanceToCamera )
 	{
-		// Frustum clipping :
+		node->activeLOD = node->activeLOD->nextLOD ;
+	}
+
+	// Draw the active LOD meshes if inside the frustum :
+
+	Node3D *lod = node->activeLOD ;
+	if ( lod->model )
+	{
+		// Frustum clipping using the main boundings of the node (not of the activeLOD ):
 
 		if ( ! FrustumContainsSphere( frustum , node->transformedCenter , node->transformedRadius ) ) return false ;
 
-		// Draw the meshes :
+		// Draw the meshes of the active LOD :
 
-		for ( int i = 0 ; i < node->model->meshCount ; i++ )
+		for ( int i = 0 ; i < lod->model->meshCount ; i++ )
 		{
-			Color color = node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color ;
+			Color color = lod->model->materials[ lod->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color ;
 
 			Color colorTint = WHITE;
-			colorTint.r = (unsigned char)( ( (int)color.r*(int)node->tint.r )/255 );
-			colorTint.g = (unsigned char)( ( (int)color.g*(int)node->tint.g )/255 );
-			colorTint.b = (unsigned char)( ( (int)color.b*(int)node->tint.b )/255 );
-			colorTint.a = (unsigned char)( ( (int)color.a*(int)node->tint.a )/255 );
+			colorTint.r = (unsigned char)( ( (int)color.r*(int)lod->tint.r )/255 );
+			colorTint.g = (unsigned char)( ( (int)color.g*(int)lod->tint.g )/255 );
+			colorTint.b = (unsigned char)( ( (int)color.b*(int)lod->tint.b )/255 );
+			colorTint.a = (unsigned char)( ( (int)color.a*(int)lod->tint.a )/255 );
 			
-			node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = colorTint ;
-			DrawMesh( node->model->meshes[i] , node->model->materials[ node->model->meshMaterial[i] ] , node->transform );
-			node->model->materials[ node->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
+			lod->model->materials[ lod->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = colorTint ;
+
+			// Draw lod's mesh using node's transform :
+			DrawMesh( lod->model->meshes[i] , lod->model->materials[ lod->model->meshMaterial[i] ] , node->transform );
+
+			lod->model->materials[ lod->model->meshMaterial[i] ].maps[MATERIAL_MAP_DIFFUSE].color = color;
 		}
 
 		node->insideFrustum = true ;
 	}
+
+	// Did we draw something ?
 
 	return node->insideFrustum ; 
 }
