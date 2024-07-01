@@ -1,4 +1,2 @@
-# rfrustum.h
-WIP basic frustrum culling API for Raylib, and maybe also a very basic scene-graph WIP ... 
-
-... will probably endup renaming it `rscenegraph.h` 
+# rscenegraph.h
+WIP basic scene-graph with frustrum culling for Raylib
