@@ -303,13 +303,24 @@ Matrix MatrixRotation( Matrix m )
 
 void NodeSetName( Node *node , char *name )
 {
+	if ( TextLength( name ) >= NODE3D_NAME_SIZE_MAX )
+	{
+		TRACELOG( LOG_WARNING , "NODE: [%s,%i] Node name too long. Will be cliped to %d." , __FILE__, __LINE__, NODE3D_NAME_SIZE_MAX );
+	}
+
 	for( int c = 0 ; c < NODE3D_NAME_SIZE_MAX ; c++ )
 	{
 		node->name[c] = name[c];
 
 		if ( name[c] == 0 ) break;
 	}
+
 	node->name[NODE3D_NAME_SIZE_MAX-1] = 0 ;
+
+	if ( TextLength( name ) >= NODE3D_NAME_SIZE_MAX )
+	{
+		TRACELOG( LOG_WARNING , "conseqence : node name is `%s` instead of `%s`" , node->name , name );
+	}
 }
 
 Node3D NodeAsGroup( char * name )
