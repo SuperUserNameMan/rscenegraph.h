@@ -83,7 +83,8 @@ RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Retur
 // Frustum stuff :
 
 RLAPI Frustum FrustumFromCamera( Camera *camera , float aspect );
-#define GetCameraFrustum FrustumFromCamera 
+#define GetCameraFrustum FrustumFromCamera
+#define CameraGetFrustum FrustumFromCamera
 
 RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
 RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
