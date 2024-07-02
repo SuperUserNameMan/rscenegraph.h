@@ -70,10 +70,14 @@ typedef struct Node3D Node;
 
 typedef void (*NodeAnimationEventCallback)( Node *node , NodeAnimationEvent event );
 
-
+#ifndef NODE3D_NAME_SIZE_MAX
+#define NODE3D_NAME_SIZE_MAX 256
+#endif
 
 typedef struct Node3D 
 {
+	char name[ NODE3D_NAME_SIZE_MAX ] ; 
+
 	Model *model ;
 
 	Color tint ;
@@ -172,9 +176,12 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 // Node's scenegraph :
 
-RLAPI Node3D NodeAsGroup();
+RLAPI Node3D NodeAsGroup( char *name );
 #define NodeAsRoot NodeAsGroup
-RLAPI Node3D NodeAsModel( Model *model );
+RLAPI Node3D NodeAsModel( char *name , Model *model );
+
+RLAPI void NodeSetName( Node *node , char *name );
+#define SetNodeName NodeSetName
 
 RLAPI void NodeAttachChild( Node *parent, Node *child );
 RLAPI void NodeAttachChildToBone( Node *parent, Node *child , char *boneName );
@@ -188,6 +195,9 @@ typedef void (*NodeTreeTraversalCallback)( Node *node , void *userData );
 
 RLAPI void NodeTreeTraversal( Node *root , NodeTreeTraversalCallback callback , void *userData );
 #define TraverseNodeTree NodeTreeTraversal
+
+RLAPI void NodeInsertLOD( Node *node , Node *lod , float distance ); // TODO explain
+RLAPI void NodeRemoveLOD( Node *node , Node *lod );
 
 // Node's transforms :
 
@@ -291,9 +301,22 @@ Matrix MatrixRotation( Matrix m )
 	return MatrixNormalize( m );
 }
 
-Node3D NodeAsGroup()
+void NodeSetName( Node *node , char *name )
+{
+	for( int c = 0 ; c < NODE3D_NAME_SIZE_MAX ; c++ )
+	{
+		node->name[c] = name[c];
+
+		if ( name[c] == 0 ) break;
+	}
+	node->name[NODE3D_NAME_SIZE_MAX-1] = 0 ;
+}
+
+Node3D NodeAsGroup( char * name )
 {
 	Node3D node ;
+
+	NodeSetName( &node , name );
 
 	node.model = NULL ;
 
@@ -340,9 +363,9 @@ Node3D NodeAsGroup()
 }
 
 
-Node3D NodeAsModel( Model *model )
+Node3D NodeAsModel( char *name , Model *model )
 {
-	Node3D node = NodeAsRoot();
+	Node3D node = NodeAsRoot( name );
 
 	node.model = model ;
 
@@ -367,6 +390,7 @@ Node3D NodeAsModel( Model *model )
 
 	return node;
 }
+
 
 void NodeRemoveLOD( Node *node , Node *lod )
 {
