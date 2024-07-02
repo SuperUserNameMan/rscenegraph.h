@@ -9,10 +9,13 @@
 #include "rfrustum.h"
 #include "rnodes.h"
 
+#ifndef SCENE3D_NAME_SIZE_MAX
+#define SCENE3D_NAME_SIZE_MAX NODE3D_NAME_SIZE_MAX
+#endif
 
 typedef struct Scene3D
 {
-	char name[ NODE3D_NAME_SIZE_MAX ];
+	char name[ SCENE3D_NAME_SIZE_MAX ];
 	Node3D *root ;
 
 	Node3D *nodeSlots ;
@@ -27,20 +30,32 @@ typedef struct Scene3D
 	int animSlotsSize ;
 	int anomSlotsIndex ;
 
+	void *userData ;
+
 } Scene3D ;
+
+typedef Scene3D Scene ;
 
 #if defined(__cplusplus)
 extern "C" {            // Prevents name mangling of functions
 #endif
 
 
-// Node's scenegraph :
+// Scenegraph :
+
+RLAPI void SceneSetName( Scene3D *scene , char *name );
+#define SetSceneName SceneSetName
+
+RLAPI Scene3D *SceneCreate( char *name , int numberOfSlots );
+#define CreateScene SceneCreate
 
 //RLAPI Scene3D SceneLoad( char *name , char *filename );
 //RLAPI void SceneUnload( Scene3D *scene );
 //RLAPI void SceneSave( Scene3D *scene , char *filename );
 
-
+RLAPI Scene3D *SceneRelease( Scene3D *scene );
+#define ReleaseScene SceneRelease
+#define UnloadScene SceneRelease
 
 #if defined(__cplusplus)
 }
@@ -50,6 +65,64 @@ extern "C" {            // Prevents name mangling of functions
 
 #if defined(RSCENEGRAPH_IMPLEMENTATION)
 
+
+Scene3D *SceneCreate( char *name , int numberOfSlots )
+{
+	Scene3D *scene = (Scene3D*)MemAlloc( sizeof( Scene3D ) );
+
+	SceneSetName( scene , name );
+
+	scene->root = NULL ;
+
+	scene->nodeSlots = (Node3D*)MemAlloc( sizeof( Node3D ) * numberOfSlots );
+	scene->nodeSlotsSize = numberOfSlots ;
+	scene->nodeSlotsIndex = 0 ;
+
+	scene->modelSlots = (Model*)MemAlloc( sizeof( Model ) * numberOfSlots );
+	scene->modelSlotsSize = numberOfSlots ;
+	scene->modelSlotsIndex = 0 ;
+
+	scene->animSlots = (ModelAnimation**)MemAlloc( sizeof( ModelAnimation* ) * numberOfSlots );
+	scene->animSlotsSize = numberOfSlots ;
+	scene->animSlotsIndex = 0 ;
+
+	scene->userData = NULL ;
+
+	return scene ;
+}
+
+Scene3D *SceneRelease( Scene3D *scene )
+{
+	MemFree( scene->nodeSlots );
+	MemFree( scene->modelSlots );
+	MemFree( scene->animSlots );
+
+	MemFree( scene );
+	return NULL ;
+}
+
+
+void SceneSetName( Scene3D *scene , char *name )
+{
+	if ( TextLength( name ) >= SCENE3D_NAME_SIZE_MAX )
+	{
+		TRACELOG( LOG_WARNING , "SCENE: [%s,%s,%i] Scene name too long. Will be cliped to %d bytes." , __func__ , __FILE__ , __LINE__ , SCENE3D_NAME_SIZE_MAX );
+	}
+
+	for( int c = 0 ; c < SCENE3D_NAME_SIZE_MAX ; c++ )
+	{
+		scene->name[c] = name[c];
+
+		if ( name[c] == 0 ) break;
+	}
+
+	scene->name[SCENE3D_NAME_SIZE_MAX-1] = 0 ;
+
+	if ( TextLength( name ) >= SCENE3D_NAME_SIZE_MAX )
+	{
+		TRACELOG( LOG_WARNING , "%s conseqence : scene name is `%s` instead of `%s`" , __func__ , scene->name , name );
+	}
+}
 
 /*
 Scene3D SceneLoad( char *name , char *filename );
