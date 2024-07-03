@@ -16,7 +16,7 @@
 
 typedef Node3D* SceneNode ;
 typedef Model* SceneModel ;
-//typedef ModelAnimation** SceneModelAnimation ;
+typedef AnimationsList* SceneAnimationsList ;
 
 
 typedef struct Scene3D
@@ -32,7 +32,7 @@ typedef struct Scene3D
 	int modelSlotsSize ;
 	int modelSlotsIndex ;
 
-	ModelAnimation **animationsSlots ;
+	AnimationsList *animationsSlots ;
 	char **animationsFileNames ;
 	int animationsSlotsSize ;
 	int animationsSlotsIndex ;
@@ -72,10 +72,11 @@ RLAPI Node *SceneFindNode( Scene3D *scene , char *name );
 #define FindSceneNode SceneFindNode
 
 RLAPI Node3D *SceneGetNewNodeSlot( Scene3D *scene );
-RLAPI Model *SceneGetModelNodeSlot( Scene3D *scene );
-RLAPI ModelAnimation *SceneGetNewAnimationsSlot( Scene3D *scene );
+RLAPI Model *SceneGetNewModelSlot( Scene3D *scene );
+RLAPI AnimationsList *SceneGetNewAnimationsSlot( Scene3D *scene );
 
 RLAPI Model *SceneLoadModel( Scene3D *scene , char *fileName );
+RLAPI AnimationsList *SceneLoadAnimations( Scene3D *scene , char *fileName );
 
 RLAPI Node3D *SceneCreateNodeAsGroup( Scene3D *scene , char *name );
 #define SceneCreateNodeAsRoot SceneCreateNodeAsGroup
@@ -89,6 +90,7 @@ RLAPI Node3D *SceneCreateNodeAsModel( Scene3D *scene , char *name , Model *model
 
 RLAPI int SceneFindNodeIndex( Scene3D *scene , Node3D *node );
 RLAPI int SceneFindModelIndex( Scene3D *scene , Model *model );
+RLAPI int SceneFindAnimationsIndex( Scene3D *scene , AnimationsList *anims );
 
 #if defined(__cplusplus)
 }
@@ -114,7 +116,7 @@ Scene3D *SceneCreate( char *name , int numberOfSlots , int numberOfNewSlotsOnRes
 	scene->modelSlotsSize = numberOfSlots ;
 	scene->modelSlotsIndex = 0 ;
 
-	scene->animationsSlots = (ModelAnimation**)MemAlloc( sizeof( ModelAnimation* )*numberOfSlots );
+	scene->animationsSlots = (AnimationsList*)MemAlloc( sizeof( AnimationsList* )*numberOfSlots );
 	scene->animationsFileNames = (char**)MemAlloc( sizeof( char* )*numberOfSlots );
 	scene->animationsSlotsSize = numberOfSlots ;
 	scene->animationsSlotsIndex = 0 ;
@@ -230,18 +232,21 @@ Model *SceneGetNewModelSlot( Scene3D *scene )
 	return model ;
 }
 
-ModelAnimation *SceneGetNewAnimsSlot( Scene3D *scene )
+AnimationsList *SceneGetNewAnimationsSlot( Scene3D *scene )
 {
 	if ( scene->animationsSlotsIndex >= scene->animationsSlotsSize )
 	{
 		if ( scene->numberOfNewSlotsOnResize <= 0 ) return NULL ;
 
 		scene->animationsSlotsSize += scene->numberOfNewSlotsOnResize ;
-		scene->animationsSlots = (ModelAnimation**)MemRealloc( scene->animationsSlots , sizeof(ModelAnimation*)*scene->animationsSlotsSize );
+		scene->animationsSlots = (AnimationsList*)MemRealloc( scene->animationsSlots , sizeof(AnimationsList)*scene->animationsSlotsSize );
 		scene->animationsFileNames = (char**)MemRealloc( scene->animationsFileNames , sizeof(char*)*scene->animationsSlotsSize );
 	}
 
-	ModelAnimation *anims = scene->animationsSlots[ scene->animationsSlotsIndex ] ;
+	AnimationsList *anims = &scene->animationsSlots[ scene->animationsSlotsIndex ] ;
+	
+	anims->list = NULL ;
+	anims->count = 0 ;
 
 	scene->animationsFileNames[ scene->animationsSlotsIndex ] = NULL ;
 
@@ -263,6 +268,21 @@ Model *SceneLoadModel( Scene3D *scene , char *fileName )
 	}
 
 	return model ;
+}
+
+AnimationsList *SceneLoadAnimations( Scene3D *scene , char *fileName )
+{
+	AnimationsList *anims = SceneGetNewAnimationsSlot( scene );
+
+	if ( anims != NULL )
+	{
+		anims->list = LoadModelAnimations( fileName , &anims->count );
+
+		scene->animationsFileNames[ scene->animationsSlotsIndex - 1 ] = (char*)MemAlloc( TextLength( fileName ) + 1 );
+		TextCopy( scene->animationsFileNames[ scene->animationsSlotsIndex - 1 ] , fileName );
+	}
+
+	return anims ;
 }
 
 Node3D *SceneCreateNodeAsGroup( Scene3D *scene , char *name )
@@ -314,6 +334,16 @@ int SceneFindModelIndex( Scene3D *scene , Model *model )
 	for( int i = 0 ; i < scene->modelSlotsIndex ; i++ )
 	{
 		if ( &(scene->modelSlots[ i ]) == model ) return i ;
+	}
+
+	return -1 ;
+}
+
+int SceneFindAnimationsIndex( Scene3D *scene , AnimationsList *anims )
+{
+	for( int i = 0 ; i < scene->animationsSlotsIndex ; i++ )
+	{
+		if ( scene->animationsSlots[ i ].list == anims->list ) return i ;
 	}
 
 	return -1 ;
@@ -375,6 +405,7 @@ bool SceneSave( Scene3D *scene , char *fileName )
 		{
 			fprintf( fout , "\n[ANIMS %d extern]\n" , i );
 		}
+		fprintf( fout , "count = %d\n" , scene->animationsSlots[ i ].count );
 	}
 
 	for( int i = 0 ; i < scene->nodeSlotsIndex ; i++ )
@@ -401,6 +432,8 @@ bool SceneSave( Scene3D *scene , char *fileName )
 				node->rotation.m8 , node->rotation.m9 , node->rotation.m10 );
 
 		fprintf( fout , "nextLOD = %d %f\n" , SceneFindNodeIndex( scene , node->nextLOD ) , node->nextDistance );
+
+		fprintf( fout , "anims = %d\n" , SceneFindAnimationsIndex( scene , &node->animations ) );
 	}
 
 	fclose( fout );
