@@ -188,8 +188,12 @@ RLAPI void NodeLoadAnimationsList( Node *node , char *fileName );
 #define LoadNodeAnimationsList NodeLoadAnimationsList
 
 RLAPI void NodePlayAnimationName( Node *node , char *name );
+#define PlayNodeAnimationName NodePlayAnimationName
 RLAPI void NodePlayAnimationIndex( Node *node , int index );
+#define PlayNodeAnimationIndex NodePlayAnimationIndex
 
+RLAPI void NodeSetAnimationEventCallback( Node *node , NodeAnimationEventCallback callback );
+#define SetNodeAnimationsEventCallback NodeSetAnimationEventCallback
 
 RLAPI void NodeUpdateAnimationTimeline( Node *node , float delta );
 #define UpdateNodeAnimationTimeline NodeUpdateAnimationTimeline
@@ -639,6 +643,11 @@ void NodePlayAnimationName( Node *node , char *name )
 			return ;
 		}
 	}
+}
+
+void NodeSetAnimationEventCallback( Node *node , NodeAnimationEventCallback callback )
+{
+	node->animEventCallback = callback ;
 }
 
 // Update the current animation timeline and call the event callback if set.
