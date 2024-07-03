@@ -182,7 +182,7 @@ RLAPI void NodeMoveSideward( Node *node , float distance ); // Move in direction
 
 RLAPI AnimationsList AnimationsListLoad( char *fileName );
 #define LoadAnimationsList AnimationsListLoad
-RLAPI void NodeSetAnimationsList( Node *node , AnimationsList anims );
+RLAPI void NodeSetAnimationsList( Node *node , AnimationsList *anims );
 #define SetNodeAnimationsList NodeSetAnimationsList
 RLAPI void NodeLoadAnimationsList( Node *node , char *fileName );
 #define LoadNodeAnimationsList NodeLoadAnimationsList
@@ -616,9 +616,17 @@ AnimationsList AnimationsListLoad( char *fileName )
 	return anims ;
 }
 
-void NodeSetAnimationsList( Node *node , AnimationsList anims )
+void NodeSetAnimationsList( Node *node , AnimationsList *anims )
 {
-	node->animations = anims ;
+	if ( anims == NULL )
+	{
+		node->animations.list = NULL ;
+		node->animations.count = 0 ;
+	}
+	else
+	{
+		node->animations = *anims ;
+	}
 }
 
 void NodeLoadAnimationsList( Node *node , char *fileName )
