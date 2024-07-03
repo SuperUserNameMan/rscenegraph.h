@@ -63,6 +63,7 @@ RLAPI Scene3D *SceneCreate( char *name , int numberOfSlots , int numberOfNewSlot
 //RLAPI Scene3D SceneLoad( char *name , char *fileName );
 //RLAPI void SceneUnload( Scene3D *scene );
 RLAPI bool SceneSave( Scene3D *scene , char *fileName );
+#define SaveScene SceneSave
 
 RLAPI Scene3D *SceneRelease( Scene3D *scene );
 #define ReleaseScene SceneRelease
