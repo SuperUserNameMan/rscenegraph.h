@@ -26,6 +26,12 @@ typedef void (*NodeAnimationEventCallback)( Node *node , NodeAnimationEvent even
 #define NODE3D_NAME_SIZE_MAX 256
 #endif
 
+typedef struct AnimationsList
+{
+	ModelAnimation *list ;
+	int count ;
+} AnimationsList;
+
 typedef struct Node3D 
 {
 	char name[ NODE3D_NAME_SIZE_MAX ] ; 
@@ -75,9 +81,8 @@ typedef struct Node3D
 
 	// Animation stuff ...
 
-	ModelAnimation *anims ;
-	int animsCount ;           // How many anims in the anims list
-	int animId ;               // Id of the currently selected anim
+	AnimationsList animations ;
+	int currentAnimationIndex ;               // Id of the currently selected anim
 
 	float animPosition;      // Position in the animation timeline (will be converted to int for current frame)
 	float animSpeed;         // Speed at which animPosition is updated by NodeUpdateAnimation(delta)
@@ -175,6 +180,17 @@ RLAPI void NodeMoveSideward( Node *node , float distance ); // Move in direction
 
 // Node animations :
 
+RLAPI AnimationsList AnimationsListLoad( char *fileName );
+#define LoadAnimationsList AnimationsListLoad
+RLAPI void NodeSetAnimationsList( Node *node , AnimationsList anims );
+#define SetNodeAnimationsList NodeSetAnimationsList
+RLAPI void NodeLoadAnimationsList( Node *node , char *fileName );
+#define LoadNodeAnimationsList NodeLoadAnimationsList
+
+RLAPI void NodePlayAnimationName( Node *node , char *name );
+RLAPI void NodePlayAnimationIndex( Node *node , int index );
+
+
 RLAPI void NodeUpdateAnimationTimeline( Node *node , float delta );
 #define UpdateNodeAnimationTimeline NodeUpdateAnimationTimeline
 
@@ -253,9 +269,9 @@ Node3D NodeAsGroup( char * name )
 	node.lastFrustum = NULL ;
 	node.insideFrustum = false ;
 
-	node.anims = NULL ;
-	node.animsCount = 0 ;
-	node.animId = -1;
+	node.animations.list = NULL ;
+	node.animations.count = 0 ;
+	node.currentAnimationIndex = -1;
 	node.animPosition = 0.0f;
 	node.animSpeed = 1.0f;
 	node.animRemainingLoops = -1 ;
@@ -586,14 +602,53 @@ void NodeAttachChild( Node *parent, Node *child )
 	}
 }
 
+
+AnimationsList AnimationsListLoad( char *fileName )
+{
+	AnimationsList anims ;
+
+	anims.list = LoadModelAnimations( fileName , &anims.count );
+
+	return anims ;
+}
+
+void NodeSetAnimationsList( Node *node , AnimationsList anims )
+{
+	node->animations = anims ;
+}
+
+void NodeLoadAnimationsList( Node *node , char *fileName )
+{
+	node->animations = AnimationsListLoad( fileName );
+}
+
+
+void NodePlayAnimationIndex( Node *node , int index )
+{
+	node->currentAnimationIndex = index ;
+	node->animPosition = 0.0f ;
+}
+
+void NodePlayAnimationName( Node *node , char *name )
+{
+	for( int i = 0 ; i < node->animations.count ; i++ )
+	{
+		if ( TextIsEqual( node->animations.list[ i ].name , name ) )
+		{
+			NodePlayAnimationIndex( node , i );
+			return ;
+		}
+	}
+}
+
 // Update the current animation timeline and call the event callback if set.
 void NodeUpdateAnimationTimeline( Node *node , float delta )
 {
 	// TODO? Update the timeline of the active lod only ? of the main LOD only ? or of all lods ?
 	//if ( node->activeLOD ) node = node->activeLOD ; 
 
-	if ( node->animId < 0 ) return ;
-	if ( node->animId >= node->animsCount ) return ;
+	if ( node->currentAnimationIndex < 0 ) return ;
+	if ( node->currentAnimationIndex >= node->animations.count ) return ;
 	if ( node->animPosition < 0.0f ) return ;
 
 	// Are we done already ?
@@ -610,12 +665,12 @@ void NodeUpdateAnimationTimeline( Node *node , float delta )
 
 	// If reaching the end of the animation :
 
-	if ( frame >= node->anims[ node->animId ].frameCount )
+	if ( frame >= node->animations.list[ node->currentAnimationIndex ].frameCount )
 	{
 		// We're going to rewind the animation.
 		// But because the position on the timeline is a float, we must keep the decimal part.
 
-		node->animPosition = fmodf( node->animPosition , (float)node->anims[ node->animId ].frameCount );
+		node->animPosition = fmodf( node->animPosition , (float)node->animations.list[ node->currentAnimationIndex ].frameCount );
 
 		// Callback events :
 
@@ -652,11 +707,11 @@ void NodeUpdateTransforms( Node *node )
 {
 	// Update animations :
 
-	if ( node->model != NULL && node->anims != NULL && node->animId >= 0 && node->animId < node->animsCount )
+	if ( node->model != NULL && node->animations.list != NULL && node->currentAnimationIndex >= 0 && node->currentAnimationIndex < node->animations.count )
 	{
 		if ( node->activeLOD == NULL || node->activeLOD == node )
 		{
-			UpdateModelAnimation( *node->model , node->anims[ node->animId ] , (int)node->animPosition );
+			UpdateModelAnimation( *node->model , node->animations.list[ node->currentAnimationIndex ] , (int)node->animPosition );
 		}
 	}
 
@@ -885,5 +940,11 @@ bool NodeDrawInFrustum( Node *node , Frustum *frustum )
 
 	return node->insideFrustum ; 
 }
+
+
+
+
+
+
 
 #endif //RNODES_IMPLEMENTATION
