@@ -13,7 +13,6 @@
 #define SCENE3D_NAME_SIZE_MAX NODE3D_NAME_SIZE_MAX
 #endif
 
-
 typedef Node3D* SceneNode ;
 typedef Model* SceneModel ;
 typedef AnimationsList* SceneAnimationsList ;
@@ -51,6 +50,13 @@ typedef Scene3D* SceneSlot ;
 extern "C" {            // Prevents name mangling of functions
 #endif
 
+// Missing text funcs :
+
+RLAPI bool TextBeginsWith( const char *text , const char *with );
+#define TextContains( t , s ) ( TextFindIndex( (t) , (s) ) >= 0 )
+
+RLAPI bool _TextIsInteger( const char *text ); // Ignore white characters surrounding the value.
+RLAPI int _TextToInteger( const char *text ); // Better version as it ignore white characters before and after
 
 // Scenegraph :
 
@@ -101,6 +107,83 @@ RLAPI int SceneFindAnimationsIndex( Scene3D *scene , AnimationsList *anims );
 
 #if defined(RSCENEGRAPH_IMPLEMENTATION)
 
+#include <stdlib.h>
+
+#define MAX_SCENE_KEYVAL_KEY_LENGTH 64
+#if MAX_TEXT_BUFFER_LENGTH < MAX_SCENE_KEYVAL_KEY_LENGTH
+	#undef MAX_SCENE_KEYVAL_KEY_LENGTH
+	#define MAX_SCENE_KEYVAL_KEY_LENGTH MAX_TEXT_BUFFER_LENGTH
+#endif
+
+void _SceneForceResizeAnimationsSlots( Scene3D *scene , int newSize );
+void _SceneForceResizeModelSlots( Scene3D *scene , int newSize );
+void _SceneForceResizeNodeSlots( Scene3D *scene , int newSize );
+
+
+bool TextBeginsWith( const char *text , const char *with )
+{
+	int text_len = TextLength( text );
+	int with_len = TextLength( with );
+
+	if ( text_len < with_len ) return false ;
+
+	for( int i = 0 ; i < with_len ; i++ )
+	{
+		if ( text[ i ] != with[ i ] ) return false ;
+	}
+
+	return true ;
+}
+
+bool _TextIsInteger( const char *text )
+{
+	// Left trimming :
+
+	while( text[0] > 0 && text[0] <= ' ' ) text++;
+
+	// Ignore sign :
+
+	if ( text[0] == '+' || text[0] == '-' ) text++;
+
+	// Integer part contains only digits 0-9 :
+
+	while( text[0] >= '0' && text[0] <= '9' ) text++;
+
+	// Right trimming
+
+	while( text[0] > 0 && text[0] <= ' ' ) text++;
+
+	// The last character must be 0 :
+
+	return text[0] == 0 ;
+}
+
+int _TextToInteger( const char *text )
+{
+	// Left trimming :
+
+	while( text[0] > 0 && text[0] <= ' ' ) text++;
+
+	// Sign :
+
+	int sign = text[0] == '-' ? -1 : 1 ;
+
+	if ( text[0] == '+' || text[0] == '-' ) text++;
+
+	// Integer part contains only digits 0-9 :
+
+	int value = 0 ;
+
+	while( text[0] >= '0' && text[0] <= '9' ) 
+	{
+		value = value * 10 + ( text[0] - '0' );
+		text++;
+	}
+
+	value *= sign ;
+
+	return value ;
+}
 
 Scene3D *SceneCreate( char *name , int numberOfSlots , int numberOfNewSlotsOnResize )
 {
@@ -133,25 +216,27 @@ Scene3D *SceneRelease( Scene3D *scene )
 {
 	MemFree( scene->nodeSlots );
 
-	MemFree( scene->modelSlots );
-
-	for( int i = 0 ; i < scene->modelSlotsSize ; i++ )
+	for( int i = 0 ; i < scene->modelSlotsIndex ; i++ )
 	{
 		if ( scene->modelFileNames[ i ] != NULL )
 		{
+			UnloadModel( scene->modelSlots[ i ] );
 			MemFree( scene->modelFileNames[ i ] );
 		}
 	}
 
-	MemFree( scene->animationsSlots );
+	MemFree( scene->modelSlots );
 
-	for( int i = 0 ; i < scene->animationsSlotsSize ; i++ )
+	for( int i = 0 ; i < scene->animationsSlotsIndex ; i++ )
 	{
 		if ( scene->animationsFileNames[ i ] != NULL )
 		{
+			UnloadModelAnimations( scene->animationsSlots[ i ].list , scene->animationsSlots[ i ].count );
 			MemFree( scene->animationsFileNames[ i ] );
 		}
 	}
+
+	MemFree( scene->animationsSlots );
 
 	MemFree( scene );
 
@@ -196,14 +281,19 @@ Node *SceneFindNode( Scene3D *scene , char *name )
 	return NULL ;
 }
 
+void _SceneForceResizeNodeSlots( Scene3D *scene , int newSize )
+{
+	scene->nodeSlotsSize = newSize ;
+	scene->nodeSlots = (Node3D*)MemRealloc( scene->nodeSlots , sizeof(Node3D)*newSize );
+}
+
 Node *SceneGetNewNodeSlot( Scene3D *scene )
 {
 	if ( scene->nodeSlotsIndex >= scene->nodeSlotsSize )
 	{
 		if ( scene->numberOfNewSlotsOnResize <= 0 ) return NULL ;
 
-		scene->nodeSlotsSize += scene->numberOfNewSlotsOnResize ;
-		scene->nodeSlots = (Node3D*)MemRealloc( scene->nodeSlots , sizeof(Node3D)*scene->nodeSlotsSize );
+		_SceneForceResizeNodeSlots( scene , scene->nodeSlotsSize + scene->numberOfNewSlotsOnResize );
 	}
 
 	Node *node = &( scene->nodeSlots[ scene->nodeSlotsIndex ] );
@@ -213,15 +303,20 @@ Node *SceneGetNewNodeSlot( Scene3D *scene )
 	return node ;
 }
 
+void _SceneForceResizeModelSlots( Scene3D *scene , int newSize )
+{
+	scene->modelSlotsSize = newSize ;
+	scene->modelSlots = (Model*)MemRealloc( scene->modelSlots , sizeof(Model)*newSize );
+	scene->modelFileNames = (char**)MemRealloc( scene->modelFileNames , sizeof(char*)*newSize );
+}
+
 Model *SceneGetNewModelSlot( Scene3D *scene )
 {
 	if ( scene->modelSlotsIndex >= scene->modelSlotsSize )
 	{
 		if ( scene->numberOfNewSlotsOnResize <= 0 ) return NULL ;
 
-		scene->modelSlotsSize += scene->numberOfNewSlotsOnResize ;
-		scene->modelSlots = (Model*)MemRealloc( scene->modelSlots , sizeof(Model)*scene->modelSlotsSize );
-		scene->modelFileNames = (char**)MemRealloc( scene->modelFileNames , sizeof(char*)*scene->modelSlotsSize );
+		_SceneForceResizeModelSlots( scene , scene->modelSlotsSize + scene->numberOfNewSlotsOnResize );
 	}
 
 	Model *model = &( scene->modelSlots[ scene->modelSlotsIndex ] );
@@ -233,15 +328,20 @@ Model *SceneGetNewModelSlot( Scene3D *scene )
 	return model ;
 }
 
+void _SceneForceResizeAnimationsSlots( Scene3D *scene , int newSize )
+{
+	scene->animationsSlotsSize = newSize ;
+	scene->animationsSlots = (AnimationsList*)MemRealloc( scene->animationsSlots , sizeof(AnimationsList)*newSize );
+	scene->animationsFileNames = (char**)MemRealloc( scene->animationsFileNames , sizeof(char*)*newSize );
+}
+
 AnimationsList *SceneGetNewAnimationsSlot( Scene3D *scene )
 {
 	if ( scene->animationsSlotsIndex >= scene->animationsSlotsSize )
 	{
 		if ( scene->numberOfNewSlotsOnResize <= 0 ) return NULL ;
 
-		scene->animationsSlotsSize += scene->numberOfNewSlotsOnResize ;
-		scene->animationsSlots = (AnimationsList*)MemRealloc( scene->animationsSlots , sizeof(AnimationsList)*scene->animationsSlotsSize );
-		scene->animationsFileNames = (char**)MemRealloc( scene->animationsFileNames , sizeof(char*)*scene->animationsSlotsSize );
+		_SceneForceResizeAnimationsSlots( scene , scene->animationsSlotsSize + scene->numberOfNewSlotsOnResize );
 	}
 
 	AnimationsList *anims = &scene->animationsSlots[ scene->animationsSlotsIndex ] ;
@@ -350,6 +450,291 @@ int SceneFindAnimationsIndex( Scene3D *scene , AnimationsList *anims )
 	return -1 ;
 }
 
+int SceneLoad_getNextLineNormalized( char **buffer , size_t *bufferSize , char **line , FILE *stream )
+{
+	int len = getline( buffer , bufferSize , stream );
+
+	if ( len == 0 ) return -1 ;
+
+	*line = *buffer ;
+
+	// Right trim :
+
+	while( len > 0 && (*line)[len-1] >= 0 && (*line)[len-1] <= ' ' ) 
+	{
+		(*line)[len-1] = 0 ;
+		len--;
+	}
+
+	// Left trim :
+
+	while( (*line)[0] > 0 && (*line)[0] <= ' ' ) 
+	{ 
+		(*line)++ ;
+		len-- ;
+	}
+
+	// Replace control characters by space :
+
+	for( int i = 0 ; i < len ; i++ )
+	{
+		if ( (*line)[i] > 0 && (*line)[i] < ' ' ) (*line)[i] = ' ';
+	}
+
+	return len ;
+}
+
+bool SceneLoad_getKeyVal( char *line , char **keyBuffer , char **valBuffer , int maxLen )
+{
+	*keyBuffer = (char*)MemRealloc( *keyBuffer , maxLen );
+	*valBuffer = (char*)MemRealloc( *valBuffer , maxLen );
+
+	(*keyBuffer)[0] = 0 ;
+	(*valBuffer)[0] = 0 ;
+	
+	int readPos = 0 ;
+	int writePos = 0 ;
+
+	// Copy the key name till we reach line's end, or white chars, or equal sign :
+	while( ! ( line[readPos] >= 0 && line[readPos] <= ' ' ) && line[readPos] != '=' )
+	{
+		(*keyBuffer)[ writePos ] = line[readPos] ;
+		readPos++;
+		writePos++;
+	}
+
+	// Null terminate the key name string :
+	(*keyBuffer)[writePos] = 0 ;
+
+	// Skip blank chr :
+	while( line[readPos] > 0 && line[readPos] <= ' ' ) readPos++;
+
+	// Key without value :
+	if ( line[readPos] != '=' ) return false ;
+
+	readPos++;
+
+	// Skip blank chr :
+	while( line[readPos] > 0 && line[readPos] <= ' ' ) readPos++;
+
+	// The rest of the string contains the value :
+	writePos = 0 ;
+	while( line[readPos] != 0 )
+	{
+		(*valBuffer)[ writePos ] = line[readPos] ;
+		readPos++;
+		writePos++;
+	}
+
+	// Null terminate the val string :
+	(*valBuffer)[ writePos ] = 0 ; 
+
+	return true ;
+}
+
+Scene3D *SceneLoad( char *fileName )
+{
+	FILE *fin = fopen( fileName , "rt" );
+	
+	if ( fin == NULL )
+	{
+		TRACELOG( LOG_ERROR , "SCENE: Can't open scene `%s`." , fileName );
+		return NULL;
+	}
+
+
+	char *lineBuffer = NULL ;
+	size_t lineBufferSize ;
+
+	char *line ;
+	int len ;
+	int lineCounter = 0;
+
+	char *keyBuffer = NULL ;
+	char *valBuffer = NULL ;
+
+	Scene *scene = NULL ;
+	char *sceneName = NULL ;
+
+	Model *model = NULL ;
+	int modelIndex = 0 ;
+	char *modelFileName = NULL ;
+	
+	AnimationsList *anims = NULL ;
+	int animsIndex = 0 ;
+	char *animsFileName = NULL ;
+
+	Node *node = NULL ;
+	int nodeIndex = 0 ;
+	char *nodeName = NULL ;
+
+	while( ( len = SceneLoad_getNextLineNormalized( &lineBuffer , &lineBufferSize , &line , fin ) ) >= 0 )
+	{
+		lineCounter++ ;
+
+//		printf( "Line %d [%d] : `%s`\n" , lineCounter , len , line );
+
+		// Parser :
+
+		if ( line[0] == 0 ) // Empty line
+		{
+			continue ;
+		}
+		else
+		if ( line[0] == ';' ) // ; Comment
+		{
+			continue ;
+		}
+		else
+		if ( line[0] == '[' ) // [Section]
+		{
+			if ( TextBeginsWith( line , "[SCENE " ) )
+			{
+				if ( scene != NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : duplicate section `[SCENE]`." , fileName , lineCounter ); 
+				}
+
+				sceneName = (char*)realloc( sceneName , len );
+				sscanf( line , "[SCENE \"%[^\"]\"]" , sceneName );
+
+				scene = SceneCreate( sceneName , 10 , 10 );
+				
+				node = NULL ;
+				anims = NULL ;
+				model = NULL ;
+
+				continue ;
+			}
+			else
+			if ( TextBeginsWith( line , "[MODEL " ) ) // [MODEL %d "%s"]
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+
+				modelFileName = (char*)realloc( modelFileName , len );
+				sscanf( line , "[MODEL %d %[^]]]" , &modelIndex , modelFileName );
+				
+				if ( modelIndex != scene->modelSlotsIndex )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : invalid index order. Expecting %d." , fileName , lineCounter , scene->modelSlotsIndex );
+					break;
+				}
+
+				if ( modelFileName[0] == '"' )
+				{
+					sscanf( line , "[MODEL %d \"%[^\"]\"]" , &modelIndex , modelFileName );
+					model = SceneLoadModel( scene , modelFileName );
+				}
+				else
+				{
+					model = SceneGetNewModelSlot( scene );
+				}
+			}
+			else
+			if ( TextBeginsWith( line , "[ANIMS " ) )
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+			}
+			else
+			if ( TextBeginsWith( line , "[NODE " ) )
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+			}
+			else
+			{
+				TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : Unsupported section." , fileName , lineCounter );
+			}
+		}
+		else
+		if ( TextContains( line , "=" ) ) // `key = val`
+		{
+			SceneLoad_getKeyVal( line , &keyBuffer , &valBuffer , len );
+
+			char *key = keyBuffer ;
+			char *val = valBuffer ;
+
+			printf("key = `%s` ; val = `%s` ;\n" , key , val );
+			
+			// Are we inside the [SCENE] section ?
+			if ( scene != NULL && model == NULL && anims == NULL && node == NULL )
+			{
+				if( TextIsEqual( key , "nodes" )
+				 || TextIsEqual( key , "models" )
+				 || TextIsEqual( key , "animations" )
+				 || TextIsEqual( key , "anims" ) )
+				{
+					if ( _TextIsInteger( val ) )
+					{
+						int intVal = _TextToInteger( val );
+
+						if ( intVal < 0 )
+						{
+							TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : a positive integer value is expected." , fileName , lineCounter );
+						}
+
+						if ( TextIsEqual( key , "nodes" ) )
+						{
+							_SceneForceResizeNodeSlots( scene , intVal );
+						}
+						else
+						if ( TextIsEqual( key , "models" ) )
+						{
+							_SceneForceResizeModelSlots( scene , intVal );
+						}
+						else
+						if ( TextBeginsWith( key , "anim" ) )
+						{
+							_SceneForceResizeAnimationsSlots( scene , intVal );
+						}
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an integer value is expected." , fileName , lineCounter );
+					}
+				}
+				else
+				{
+					TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : unsupported key name." , fileName , lineCounter );
+				}
+			}
+			else // Are we inside a [MODEL] section ?
+			if ( scene != NULL && model != NULL && anims == NULL && node == NULL )
+			{
+			}
+		}
+		else
+		{
+			TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : Unexpected error." , fileName , lineCounter );
+		}
+
+	} // wend next line
+
+	free( keyBuffer );
+	free( valBuffer );
+
+	free( nodeName );
+	free( animsFileName );
+	free( modelFileName );
+	free( sceneName );
+
+	free( lineBuffer );
+	fclose( fin );
+
+	return scene ;
+}
+
 bool SceneSave( Scene3D *scene , char *fileName )
 {
 	FILE *fout = fopen( fileName , "wt" );
@@ -377,23 +762,43 @@ bool SceneSave( Scene3D *scene , char *fileName )
 			fprintf( fout , "\n[MODEL %d extern]\n" , i );
 		}
 
-		fprintf( fout , "transform = %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f\n" ,
-			scene->modelSlots[ i ].transform.m0 ,
-			scene->modelSlots[ i ].transform.m1 ,
-			scene->modelSlots[ i ].transform.m2 ,
-			scene->modelSlots[ i ].transform.m3 ,
-			scene->modelSlots[ i ].transform.m4 ,
-			scene->modelSlots[ i ].transform.m5 ,
-			scene->modelSlots[ i ].transform.m6 ,
-			scene->modelSlots[ i ].transform.m7 ,
-			scene->modelSlots[ i ].transform.m8 ,
-			scene->modelSlots[ i ].transform.m9 ,
-			scene->modelSlots[ i ].transform.m10 ,
-			scene->modelSlots[ i ].transform.m11 ,
-			scene->modelSlots[ i ].transform.m12 ,
-			scene->modelSlots[ i ].transform.m13 ,
-			scene->modelSlots[ i ].transform.m14 ,
-			scene->modelSlots[ i ].transform.m15 );
+		if ( 1 )
+		{ 
+			Vector3 p = ExtractTranslationFromMatrix( scene->modelSlots[ i ].transform );
+
+			fprintf( fout , "position = %f %f %f\n" , p.x , p.y , p.z );
+
+			Vector3 s = ExtractScaleFromMatrix( scene->modelSlots[ i ].transform );
+
+			fprintf( fout , "scale = %f %f %f\n" , s.x , s.y , s.z );
+	
+			Matrix r = ExtractRotationMatrixFromMatrix( scene->modelSlots[ i ].transform );
+
+			fprintf( fout , "rotation = %f %f %f %f %f %f %f %f %f\n" ,
+				r.m0 , r.m1 , r.m2 ,
+				r.m4 , r.m5 , r.m6 ,
+				r.m8 , r.m9 , r.m10 );
+		}
+		else
+		{
+			fprintf( fout , "transform = %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f\n" ,
+				scene->modelSlots[ i ].transform.m0 ,
+				scene->modelSlots[ i ].transform.m1 ,
+				scene->modelSlots[ i ].transform.m2 ,
+				scene->modelSlots[ i ].transform.m3 ,
+				scene->modelSlots[ i ].transform.m4 ,
+				scene->modelSlots[ i ].transform.m5 ,
+				scene->modelSlots[ i ].transform.m6 ,
+				scene->modelSlots[ i ].transform.m7 ,
+				scene->modelSlots[ i ].transform.m8 ,
+				scene->modelSlots[ i ].transform.m9 ,
+				scene->modelSlots[ i ].transform.m10 ,
+				scene->modelSlots[ i ].transform.m11 ,
+				scene->modelSlots[ i ].transform.m12 ,
+				scene->modelSlots[ i ].transform.m13 ,
+				scene->modelSlots[ i ].transform.m14 ,
+				scene->modelSlots[ i ].transform.m15 );
+		}
 	}
 
 	for( int i = 0 ; i < scene->animationsSlotsIndex ; i++ )
