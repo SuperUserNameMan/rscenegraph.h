@@ -69,7 +69,16 @@ RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
 RLAPI Matrix MatrixNormalize( Matrix m ); // Normalize the scales of the transform matrix
 RLAPI Matrix MatrixRotation( Matrix m ); // Normalize the scales, and nullify the translation of the transform matrix
+#define MatrixExtractRotationMatrix MatrixRotation
+#define RotationMatrixFromMatrix MatrixRotation
+#define ExtractRotationMatrixFromMatrix MatrixRotation
 
+RLAPI Vector3 MatrixExtractTranslation( Matrix m );
+#define TranslationFromMatrix MatrixExtractTranslation
+#define ExtractTranslationFromMatrix MatrixExtractTranslation
+RLAPI Vector3 MatrixExtractScale( Matrix m );
+#define ScaleFromMatrix MatrixExtractScale
+#define ExtractScaleFromMatrix MatrixExtractScale
 
 // Plane stuff :
 
@@ -127,6 +136,23 @@ Matrix MatrixRotation( Matrix m )
 
 	return MatrixNormalize( m );
 }
+
+
+Vector3 MatrixExtractTranslation( Matrix m )
+{
+	return (Vector3){ m.m12 , m.m13 , m.m14 };
+}
+
+Vector3 MatrixExtractScale( Matrix m )
+{
+	return (Vector3){
+		sqrtf( m.m0*m.m0 + m.m1*m.m1 + m.m2*m.m2 ),
+		sqrtf( m.m4*m.m4 + m.m5*m.m5 + m.m6*m.m6 ),
+		sqrtf( m.m8*m.m8 + m.m9*m.m9 + m.m10*m.m10 )
+	};
+}
+
+
 
 BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
 {
