@@ -33,7 +33,7 @@ int main( int argc , char** argv )
 	{
 		UpdateCamera( &camera , CAMERA_ORBITAL ); 
 
-		Frustum frustum = CameraGetFrustum( &camera , (float)GetScreenWidth()/(float)GetScreenHeight() );
+		Frustum frustum = GetCameraFrustum( &camera , (float)GetScreenWidth()/(float)GetScreenHeight() );
 
 		BeginDrawing();
 
