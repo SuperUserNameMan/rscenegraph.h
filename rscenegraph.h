@@ -38,6 +38,8 @@ typedef struct Scene3D
 
 	int numberOfNewSlotsOnResize ;
 
+	Node3D *root ;
+
 	void *userData ;
 
 } Scene3D ;
@@ -66,8 +68,8 @@ RLAPI void SceneSetName( Scene3D *scene , char *name );
 RLAPI Scene3D *SceneCreate( char *name , int numberOfSlots , int numberOfNewSlotsOnResize );
 #define CreateScene SceneCreate
 
-//RLAPI Scene3D SceneLoad( char *name , char *fileName );
-//RLAPI void SceneUnload( Scene3D *scene );
+RLAPI Scene3D *SceneLoad( char *fileName );
+#define LoadScene SceneLoad
 RLAPI bool SceneSave( Scene3D *scene , char *fileName );
 #define SaveScene SceneSave
 
@@ -75,8 +77,7 @@ RLAPI Scene3D *SceneRelease( Scene3D *scene );
 #define ReleaseScene SceneRelease
 #define UnloadScene SceneRelease
 
-RLAPI Node *SceneFindNode( Scene3D *scene , char *name );
-#define FindSceneNode SceneFindNode
+RLAPI int SceneDrawInFrustum( Scene3D *scene , Frustum *frustum );
 
 RLAPI Node3D *SceneGetNewNodeSlot( Scene3D *scene );
 RLAPI Model *SceneGetNewModelSlot( Scene3D *scene );
@@ -94,6 +95,12 @@ RLAPI Node3D *SceneCreateNodeAsGroup( Scene3D *scene , char *name );
 RLAPI Node3D *SceneCreateNodeAsModel( Scene3D *scene , char *name , Model *model );
 #define SceneNodeAsModel SceneCreateNodeAsModel
 #define CreateSceneNodeAsModel SceneCreateNodeAsModel
+
+RLAPI Node *SceneFindNode( Scene3D *scene , char *name );
+#define FindSceneNode SceneFindNode
+
+RLAPI bool SceneSelectRootAs( Scene3D *scene , char *name );
+#define SelectSceneRootAs SceneSelectRootAs
 
 RLAPI int SceneFindNodeIndex( Scene3D *scene , Node3D *node );
 RLAPI int SceneFindModelIndex( Scene3D *scene , Model *model );
@@ -207,6 +214,8 @@ Scene3D *SceneCreate( char *name , int numberOfSlots , int numberOfNewSlotsOnRes
 
 	scene->numberOfNewSlotsOnResize = numberOfNewSlotsOnResize ;
 
+	scene->root = NULL ;
+
 	scene->userData = NULL ;
 
 	return scene ;
@@ -243,6 +252,10 @@ Scene3D *SceneRelease( Scene3D *scene )
 	return NULL ;
 }
 
+bool SceneSelectRootAs( Scene3D *scene , char *name )
+{
+	scene->root = SceneFindNode( scene , name );
+}
 
 void SceneSetName( Scene3D *scene , char *name )
 {
@@ -532,6 +545,7 @@ bool SceneLoad_getKeyVal( char *line , char **keyBuffer , char **valBuffer , int
 	return true ;
 }
 
+
 Scene3D *SceneLoad( char *fileName )
 {
 	FILE *fin = fopen( fileName , "rt" );
@@ -567,6 +581,7 @@ Scene3D *SceneLoad( char *fileName )
 	Node *node = NULL ;
 	int nodeIndex = 0 ;
 	char *nodeName = NULL ;
+	char *boneName = NULL ;
 
 	while( ( len = SceneLoad_getNextLineNormalized( &lineBuffer , &lineBufferSize , &line , fin ) ) >= 0 )
 	{
@@ -578,17 +593,17 @@ Scene3D *SceneLoad( char *fileName )
 
 		if ( line[0] == 0 ) // Empty line
 		{
-			continue ;
+			continue ; // Skip
 		}
 		else
-		if ( line[0] == ';' ) // ; Comment
+		if ( line[0] == ';' ) // ; Comment line
 		{
-			continue ;
+			continue ; // Skip
 		}
 		else
-		if ( line[0] == '[' ) // [Section]
+		if ( line[0] == '[' ) // [SECTION] line
 		{
-			if ( TextBeginsWith( line , "[SCENE " ) )
+			if ( TextBeginsWith( line , "[SCENE " ) ) // [SCENE "%s"] --------------------------------------------------
 			{
 				if ( scene != NULL )
 				{
@@ -596,18 +611,23 @@ Scene3D *SceneLoad( char *fileName )
 				}
 
 				sceneName = (char*)realloc( sceneName , len );
-				sscanf( line , "[SCENE \"%[^\"]\"]" , sceneName );
-
-				scene = SceneCreate( sceneName , 10 , 10 );
+				
+				if ( 1 == sscanf( line , "[SCENE \"%[^\"]\"]" , sceneName ) )
+				{
+					scene = SceneCreate( sceneName , 10 , 10 );
+				}
+				else
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode scene name between double quotes." , fileName , lineCounter ); 
+					break;
+				}
 				
 				node = NULL ;
 				anims = NULL ;
 				model = NULL ;
-
-				continue ;
 			}
 			else
-			if ( TextBeginsWith( line , "[MODEL " ) ) // [MODEL %d "%s"]
+			if ( TextBeginsWith( line , "[MODEL " ) ) // [MODEL %d "%s"] -----------------------------------------------
 			{
 				if ( scene == NULL )
 				{
@@ -616,7 +636,12 @@ Scene3D *SceneLoad( char *fileName )
 				}
 
 				modelFileName = (char*)realloc( modelFileName , len );
-				sscanf( line , "[MODEL %d %[^]]]" , &modelIndex , modelFileName );
+
+				if ( 2 != sscanf( line , "[MODEL %d %[^]]]" , &modelIndex , modelFileName ) )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
 				
 				if ( modelIndex != scene->modelSlotsIndex )
 				{
@@ -633,42 +658,214 @@ Scene3D *SceneLoad( char *fileName )
 				{
 					model = SceneGetNewModelSlot( scene );
 				}
+
+				node = NULL ;
+				anims = NULL ;
 			}
 			else
-			if ( TextBeginsWith( line , "[ANIMS " ) )
+			if ( TextBeginsWith( line , "[ANIMS " ) ) // [ANIMS %d "%s"] -----------------------------------------------
 			{
 				if ( scene == NULL )
 				{
 					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
 					break;
 				}
+
+				animsFileName = (char*)realloc( animsFileName , len );
+
+				if ( 2 != sscanf( line , "[ANIMS %d \"%[^\"]" , &animsIndex , animsFileName ) )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
+				
+				if ( animsIndex != scene->animationsSlotsIndex )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : invalid index order. Expecting %d." , fileName , lineCounter , scene->animationsSlotsIndex );
+					break;
+				}
+
+				anims = SceneLoadAnimations( scene , animsFileName );
+
+				node = NULL ;
+				model = NULL ;
 			}
 			else
-			if ( TextBeginsWith( line , "[NODE " ) )
+			if ( TextBeginsWith( line , "[NODE " ) ) // [NODE %d "%s"] -------------------------------------------------
 			{
 				if ( scene == NULL )
 				{
 					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
 					break;
 				}
+
+				nodeName = (char*)realloc( nodeName , len );
+
+				if ( 2 != sscanf( line , "[NODE %d \"%[^\"]" , &nodeIndex , nodeName ) )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
+				
+				if ( nodeIndex != scene->nodeSlotsIndex )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : invalid index order. Expecting %d." , fileName , lineCounter , scene->nodeSlotsIndex );
+					break;
+				}
+
+				node = SceneNodeAsGroup( scene , nodeName );
+
+				model = NULL ;
+				anims = NULL ;
+			}
+			else
+			if ( TextBeginsWith( line , "[NodeAttachChild " ) ) // [NodeAttachChild %d %d] ------------------------------
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+
+				int parentId = -1 ;
+				int childId = -1 ;
+	
+				if ( 2 == sscanf( line , "[NodeAttachChild %d %d]" , &parentId , &childId ) )
+				{
+					if ( parentId < 0 ) continue ;
+					if ( childId < 0 ) continue ;
+
+					if ( parentId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : parent is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					if ( childId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : child is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					node = &(scene->nodeSlots[ parentId ]);
+					NodeAttachChild( node , &(scene->nodeSlots[ childId ]) );
+				}
+				else
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
+
+				model = NULL ;
+				node = NULL ;
+				anims = NULL ;
+			}
+			else
+			if ( TextBeginsWith( line , "[NodeAttachChildToBone " ) ) // [NodeAttachChildToBone %d %d "%s"] ------------
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+
+				int parentId = -1 ;
+				int childId = -1 ;
+
+				boneName = (char*)realloc( boneName , len );
+	
+				if ( 3 == sscanf( line , "[NodeAttachChildToBone %d %d \"%[^\"]\"]" , &parentId , &childId , boneName) )
+				{
+					if ( parentId < 0 ) continue ;
+					if ( childId < 0 ) continue ;
+
+					if ( parentId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : parent is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					if ( childId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : child is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					NodeAttachChildToBone( &(scene->nodeSlots[ parentId ]) , &(scene->nodeSlots[ childId ]) , boneName );
+				}
+				else
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
+
+				model = NULL ;
+				node = NULL ;
+				anims = NULL ;
+			}
+			else
+			if ( TextBeginsWith( line , "[NodeInsertLOD " ) ) // [NodeInsertLOD %d %d %f]
+			{
+				if ( scene == NULL )
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : section `[SCENE]` must be the first section." , fileName , lineCounter ); 
+					break;
+				}
+
+				int parentId = -1 ;
+				int childId = -1 ;
+				float distance = 0.0 ;
+
+				if ( 3 == sscanf( line , "[NodeInsertLOD %d %d %f]" , &parentId , &childId , &distance ) )
+				{
+					if ( parentId < 0 ) continue ;
+					if ( childId < 0 ) continue ;
+
+					if ( parentId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : parent is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					if ( childId >= scene->nodeSlotsIndex )
+					{
+						TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : child is not defined." , fileName , lineCounter ); 
+						break;
+					}
+
+					NodeInsertLOD( &(scene->nodeSlots[ parentId ]) , &(scene->nodeSlots[ childId ]) , distance );
+				}
+				else
+				{
+					TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : could not decode parameters." , fileName , lineCounter ); 
+					break;
+				}
+
+				model = NULL ;
+				node = NULL ;
+				anims = NULL ;
 			}
 			else
 			{
+				model = NULL ;
+				node = NULL ;
+				anims = NULL ;
+
 				TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : Unsupported section." , fileName , lineCounter );
 			}
 		}
 		else
-		if ( TextContains( line , "=" ) ) // `key = val`
+		if ( TextContains( line , "=" ) ) // `key = val` ---------------------------------------------------------------
 		{
 			SceneLoad_getKeyVal( line , &keyBuffer , &valBuffer , len );
 
 			char *key = keyBuffer ;
 			char *val = valBuffer ;
 
-			printf("key = `%s` ; val = `%s` ;\n" , key , val );
+//			printf("key = `%s` ; val = `%s` ;\n" , key , val );
 			
 			// Are we inside the [SCENE] section ?
-			if ( scene != NULL && model == NULL && anims == NULL && node == NULL )
+			if ( scene != NULL && model == NULL && anims == NULL && node == NULL ) // [SCENE] parameters ===============
 			{
 				if( TextIsEqual( key , "nodes" )
 				 || TextIsEqual( key , "models" )
@@ -709,14 +906,177 @@ Scene3D *SceneLoad( char *fileName )
 					TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : unsupported key name." , fileName , lineCounter );
 				}
 			}
-			else // Are we inside a [MODEL] section ?
-			if ( scene != NULL && model != NULL && anims == NULL && node == NULL )
+			else // Are we inside a [NODE] section ?
+			if ( scene != NULL && node != NULL && anims == NULL && model == NULL ) // [NODE] parameters ================
 			{
+				if ( TextIsEqual( key , "position" ) ) // position = %f %f %f
+				{
+					Vector3 vec = {0};
+					if ( 3 == sscanf( val , "%f %f %f" , &(vec.x) , &(vec.y) , &(vec.z) ) )
+					{
+						node->position = vec ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 3 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "scale" ) ) // scale = %f %f %f
+				{
+					Vector3 vec = {0};
+					if ( 3 == sscanf( val , "%f %f %f" , &(vec.x) , &(vec.y) , &(vec.z) ) )
+					{
+						node->scale = vec ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 3 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "rotation" ) ) // rotation = %f %f %f %f %f %f %f %f %f
+				{
+					Matrix mat = MatrixIdentity();
+					if ( 9 == sscanf( val , "%f %f %f %f %f %f %f %f %f" , &(mat.m0) , &(mat.m1) , &(mat.m2) , &(mat.m4) , &(mat.m5) , &(mat.m6) , &(mat.m8) , &(mat.m9) , &(mat.m10) ) )
+					{
+						node->rotation = mat ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 9 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "tint" ) ) // tint = %d %d %d %d
+				{
+					int r , g , b , a ;
+					if ( 4 == sscanf( val , "%d %d %d %d" , &r , &g , &b , &a ) )
+					{
+						if( ( r >= 0 ) && ( r <= 255 )
+						 && ( g >= 0 ) && ( g <= 255 )
+						 && ( b >= 0 ) && ( b <= 255 )
+						 && ( a >= 0 ) && ( a <= 255 ) )
+						{
+							node->tint = (Color){ r , g , b , a };
+						}
+						else
+						{
+							TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : expecting 4 integers between 0 and 255." , fileName , lineCounter );
+							break;
+						}
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 4 integers values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "model" ) ) // model = %d
+				{
+					if ( _TextIsInteger( val ) )
+					{
+						int intVal = _TextToInteger( val );
+						if ( intVal < scene->nodeSlotsIndex )
+						{
+							node->model = intVal < 0 ? NULL : &(scene->modelSlots[ intVal ]);
+							*node = NodeReplaceModel( *node , node->model );
+						}
+						else
+						{
+							TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : model %d is not defined." , fileName , lineCounter , intVal );
+							break;
+						}
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an integer value is expected." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "anims" ) || TextIsEqual( key , "animations" ) ) // anims = %d
+				{
+					if ( _TextIsInteger( val ) )
+					{
+						int intVal = _TextToInteger( val );
+						if ( intVal < scene->animationsSlotsIndex )
+						{
+							node->animations = scene->animationsSlots[ intVal ];
+						}
+						else
+						{
+							TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : anims %d is not defined." , fileName , lineCounter , intVal );
+							//break;
+						}
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an integer value is expected." , fileName , lineCounter );
+					}
+				}
+				else
+				{
+					TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : unsupported key name." , fileName , lineCounter );
+				}
+			}
+			else // Are we inside a [MODEL] section ?
+			if ( scene != NULL && model != NULL && anims == NULL && node == NULL ) // [MODEL] parameters ===============
+			{
+				if ( TextIsEqual( key , "position" ) ) // position = %f %f %f
+				{
+					Vector3 vec = {0};
+					if ( 3 == sscanf( val , "%f %f %f" , &(vec.x) , &(vec.y) , &(vec.z) ) ) // TODO FIXME
+					{
+						model->transform.m12 = vec.x ;
+						model->transform.m13 = vec.y ;
+						model->transform.m14 = vec.z ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 3 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "scale" ) ) // scale = %f %f %f
+				{
+					Vector3 vec = {0};
+					if ( 3 == sscanf( val , "%f %f %f" , &(vec.x) , &(vec.y) , &(vec.z) ) )
+					{
+						model->transform = MatrixMultiply( MatrixScale( vec.x , vec.y , vec.z ) , model->transform ); // TODO FIXME
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 3 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "rotation" ) ) // rotation = %f %f %f %f %f %f %f %f %f
+				{
+					Matrix mat = MatrixIdentity();
+					if ( 9 == sscanf( val , "%f %f %f %f %f %f %f %f %f" , &(mat.m0) , &(mat.m1) , &(mat.m2) , &(mat.m4) , &(mat.m5) , &(mat.m6) , &(mat.m8) , &(mat.m9) , &(mat.m10) ) )
+					{
+						model->transform = MatrixMultiply( mat , model->transform ); // TODO FIXME
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : could not decode 9 floats values separated by space." , fileName , lineCounter );
+					}
+				}
+				else
+				{
+					TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : unsupported key name." , fileName , lineCounter );
+				}
 			}
 		}
 		else
 		{
-			TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : Unexpected error." , fileName , lineCounter );
+			// Empty lines are skipped
+			// Comment lines are skipped
+			// [SECTION] lines are parsed
+			// key = val lines are parsed
+			// So, if anything else, it must be an error :
+			TRACELOG( LOG_ERROR , "SCENE: `%s`, line %d : Unexpected error." , fileName , lineCounter );
+			break;
 		}
 
 	} // wend next line
@@ -724,6 +1084,7 @@ Scene3D *SceneLoad( char *fileName )
 	free( keyBuffer );
 	free( valBuffer );
 
+	free( boneName );
 	free( nodeName );
 	free( animsFileName );
 	free( modelFileName );
@@ -820,9 +1181,9 @@ bool SceneSave( Scene3D *scene , char *fileName )
 
 		fprintf( fout , "\n[NODE %d \"%s\"]\n" , i , node->name );
 
-		fprintf( fout , "parent = %d\n" , node->parent == NULL ? -1 : SceneFindNodeIndex( scene , node->parent ) );
+//		fprintf( fout , "parent = %d\n" , node->parent == NULL ? -1 : SceneFindNodeIndex( scene , node->parent ) );
 
-		fprintf( fout , "toBone = %d \"%s\"\n" , node->positionRelativeToParentBoneId , node->positionRelativeToParentBoneName );
+//		fprintf( fout , "toBone = %d \"%s\"\n" , node->positionRelativeToParentBoneId , node->positionRelativeToParentBoneName );
 
 		fprintf( fout , "model = %d\n" , node->model == NULL ? -1 : SceneFindModelIndex( scene , node->model ) );
 
@@ -837,9 +1198,40 @@ bool SceneSave( Scene3D *scene , char *fileName )
 				node->rotation.m4 , node->rotation.m5 , node->rotation.m6 ,
 				node->rotation.m8 , node->rotation.m9 , node->rotation.m10 );
 
-		fprintf( fout , "nextLOD = %d %f\n" , SceneFindNodeIndex( scene , node->nextLOD ) , node->nextDistance );
+//		fprintf( fout , "nextLOD = %d %f\n" , SceneFindNodeIndex( scene , node->nextLOD ) , node->nextDistance );
 
 		fprintf( fout , "anims = %d\n" , SceneFindAnimationsIndex( scene , &node->animations ) );
+	}
+
+	for( int i = 0 ; i < scene->nodeSlotsIndex ; i++ )
+	{
+		Node3D *node = &(scene->nodeSlots[ i ]);
+
+		if ( node->parent == NULL ) continue ;
+
+		int parentId = node->parent == NULL ? -1 : SceneFindNodeIndex( scene , node->parent );
+		int childId  = SceneFindNodeIndex( scene , node );
+
+		if ( node->positionRelativeToParentBoneId < 0 )
+		{
+			fprintf( fout , "\n[NodeAttachChild %d %d]\n" , parentId , childId );
+		}
+		else
+		{
+			fprintf( fout , "\n[NodeAttachChildToBone %d %d \"%s\"]\n" , parentId , childId , node->positionRelativeToParentBoneName );
+		}
+	}
+
+	for( int i = 0 ; i < scene->nodeSlotsIndex ; i++ )
+	{
+		Node3D *node = &(scene->nodeSlots[ i ]);
+
+		if ( node->nextLOD == NULL ) continue ;
+
+		int nodeId  = SceneFindNodeIndex( scene , node );
+		int lodId = SceneFindNodeIndex( scene , node->nextLOD );
+
+		fprintf( fout , "\n[NodeInsertLOD %d %d %f]\n" , nodeId , lodId , node->nextDistance );
 	}
 
 	fclose( fout );
@@ -847,7 +1239,39 @@ bool SceneSave( Scene3D *scene , char *fileName )
 	return true ;
 }
 
+void SceneUpdateTransforms( Scene3D *scene )
+{
+	if ( scene->nodeSlotsIndex == 0 ) return;
 
+	if ( scene->root == NULL )
+	{
+		scene->root = SceneFindNode( scene , "root" );
+
+		if ( scene->root == NULL ) 
+		{
+			scene->root = &( scene->nodeSlots[0] );
+		}
+	}
+
+	NodeTreeUpdateTransforms( scene->root );
+}
+
+int SceneDrawInFrustum( Scene3D *scene , Frustum *frustum )
+{
+	if ( scene->nodeSlotsIndex == 0 ) return 0 ;
+
+	if ( scene->root == NULL )
+	{
+		scene->root = SceneFindNode( scene , "root" );
+
+		if ( scene->root == NULL ) 
+		{
+			scene->root = &( scene->nodeSlots[0] );
+		}
+	}
+
+	return NodeTreeDrawInFrustum( scene->root , frustum );
+}
 
 
 #endif //RSCENEGRAPH_IMPLEMENTATION
