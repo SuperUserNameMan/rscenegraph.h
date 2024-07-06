@@ -614,8 +614,9 @@ void NodeAttachChild( Node *parent, Node *child )
 		}
 
 		// Move child's transforms to parent's space :
-		
-		child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ) );
+
+		NodeUpdateTransforms( child );
+		child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ));
 		NodeUnpackTransforms( child );
 	}
 }
