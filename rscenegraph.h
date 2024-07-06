@@ -1015,6 +1015,46 @@ Scene3D *SceneLoad( char *fileName )
 					}
 				}
 				else
+				if ( TextIsEqual( key , "play" ) ) // play = %d
+				{
+					if ( _TextIsInteger( val ) )
+					{
+						int intVal = _TextToInteger( val );
+						node->currentAnimationIndex = intVal ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an integer value is expected." , fileName , lineCounter );
+					}
+				}
+				else
+				if ( TextIsEqual( key , "speed" ) ) // speed = %f
+				{
+					float speed = 0.0 ;
+					if ( 1 == sscanf( val , "%f" , &speed ) )
+					{
+						node->animSpeed = speed ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an float value is expected." , fileName , lineCounter );
+					}
+
+				}
+				else
+				if ( TextIsEqual( key , "loops" ) ) // loops = %d
+				{
+					if ( _TextIsInteger( val ) )
+					{
+						int intVal = _TextToInteger( val );
+						node->animRemainingLoops = intVal ;
+					}
+					else
+					{
+						TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : an integer value is expected." , fileName , lineCounter );
+					}
+				}
+				else
 				{
 					TRACELOG( LOG_WARNING , "SCENE: `%s`, line %d : unsupported key name." , fileName , lineCounter );
 				}
@@ -1181,10 +1221,6 @@ bool SceneSave( Scene3D *scene , char *fileName )
 
 		fprintf( fout , "\n[NODE %d \"%s\"]\n" , i , node->name );
 
-//		fprintf( fout , "parent = %d\n" , node->parent == NULL ? -1 : SceneFindNodeIndex( scene , node->parent ) );
-
-//		fprintf( fout , "toBone = %d \"%s\"\n" , node->positionRelativeToParentBoneId , node->positionRelativeToParentBoneName );
-
 		fprintf( fout , "model = %d\n" , node->model == NULL ? -1 : SceneFindModelIndex( scene , node->model ) );
 
 		fprintf( fout , "tint = %d %d %d %d\n" , node->tint.r , node->tint.g , node->tint.b , node->tint.a );
@@ -1198,9 +1234,11 @@ bool SceneSave( Scene3D *scene , char *fileName )
 				node->rotation.m4 , node->rotation.m5 , node->rotation.m6 ,
 				node->rotation.m8 , node->rotation.m9 , node->rotation.m10 );
 
-//		fprintf( fout , "nextLOD = %d %f\n" , SceneFindNodeIndex( scene , node->nextLOD ) , node->nextDistance );
-
 		fprintf( fout , "anims = %d\n" , SceneFindAnimationsIndex( scene , &node->animations ) );
+		fprintf( fout , "play = %d\n" , node->currentAnimationIndex );
+		fprintf( fout , "speed = %f\n" , node->animSpeed );
+		fprintf( fout , "loops = %d\n" , node->animRemainingLoops );
+		
 	}
 
 	for( int i = 0 ; i < scene->nodeSlotsIndex ; i++ )
