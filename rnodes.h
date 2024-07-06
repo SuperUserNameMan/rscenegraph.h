@@ -774,7 +774,7 @@ void NodeUpdateTransforms( Node *node )
 
 	// Update position relative to parent's animated bone :
 
-	if ( node->parent != NULL && node->positionRelativeToParentBoneId >= 0 && node->positionRelativeToParentBoneId < node->parent->model->boneCount )
+	if ( node->parent != NULL && node->positionRelativeToParentBoneId >= 0 && node->positionRelativeToParentBoneId < node->parent->model->boneCount && node->parent->currentAnimationIndex < node->parent->animations.count && node->parent->animations.list != NULL )
 	{
 		int boneId = node->positionRelativeToParentBoneId ;
 		int frame  = (int)node->parent->animPosition ;
