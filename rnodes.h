@@ -107,6 +107,9 @@ RLAPI Node3D NodeAsGroup( char *name );
 #define NodeAsRoot NodeAsGroup
 RLAPI Node3D NodeAsModel( char *name , Model *model );
 
+RLAPI Node3D NodeReplaceModel( Node3D node , Model *model );
+#define ReplaceNodeModel NodeReplaceModel
+
 RLAPI void NodeSetName( Node *node , char *name );
 #define SetNodeName NodeSetName
 
@@ -291,15 +294,27 @@ Node3D NodeAsModel( char *name , Model *model )
 {
 	Node3D node = NodeAsRoot( name );
 
+	node = NodeReplaceModel( node , model );
+
+	return node;
+}
+
+Node3D NodeReplaceModel( Node3D node , Model *model )
+{
 	node.model = model ;
 
 	// Get the untransformed boundings :
 
+	if ( model != NULL )
 	{
 		Matrix temp = model->transform ;
 		model->transform = MatrixIdentity();
 		node.untransformedBox = GetModelBoundingBox( *model );
 		model->transform = temp;
+	}
+	else
+	{
+		node.untransformedBox = (BoundingBox){0};
 	}
 
 	node.untransformedCenter.x = ( node.untransformedBox.min.x + node.untransformedBox.max.x )*0.5f ;
@@ -312,9 +327,8 @@ Node3D NodeAsModel( char *name , Model *model )
 
 	NodeUpdateTransforms( &node );
 
-	return node;
+	return node ;
 }
-
 
 void NodeRemoveLOD( Node *node , Node *lod )
 {
