@@ -201,6 +201,9 @@ RLAPI void NodeSetAnimationEventCallback( Node *node , NodeAnimationEventCallbac
 RLAPI void NodeUpdateAnimationTimeline( Node *node , float delta );
 #define UpdateNodeAnimationTimeline NodeUpdateAnimationTimeline
 
+RLAPI void NodeTreeUpdateAnimationTimeline( Node *root , float delta );
+#define UpdateNodeTreeAnimationTimeline NodeTreeUpdateAnimationTimeline
+
 // Node drawing :
 
 RLAPI bool NodeDrawInFrustum( Node *node , Frustum *frustum ); // Draw the single node if visible inside the frustum and return true, else false
@@ -671,6 +674,25 @@ void NodePlayAnimationName( Node *node , char *name )
 void NodeSetAnimationEventCallback( Node *node , NodeAnimationEventCallback callback )
 {
 	node->animEventCallback = callback ;
+}
+
+void NodeTreeUpdateAnimationTimeline( Node *root , float delta )
+{
+	Node3D *sibling ;
+	Node3D *node = root ;
+
+	while( node )
+	{
+		NodeUpdateAnimationTimeline( node , delta );
+
+		sibling = node ;
+		while( sibling = sibling->nextSibling )
+		{
+			NodeUpdateAnimationTimeline( sibling , delta);
+		}
+
+		node = node->firstChild ;
+	}
 }
 
 // Update the current animation timeline and call the event callback if set.
