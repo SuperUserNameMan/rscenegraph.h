@@ -106,6 +106,8 @@ RLAPI int SceneFindNodeIndex( Scene3D *scene , Node3D *node );
 RLAPI int SceneFindModelIndex( Scene3D *scene , Model *model );
 RLAPI int SceneFindAnimationsIndex( Scene3D *scene , AnimationsList *anims );
 
+RLAPI void SceneUpdateAnimationsTimeline( Scene3D *scene , float delta );
+
 #if defined(__cplusplus)
 }
 #endif
@@ -1311,5 +1313,21 @@ int SceneDrawInFrustum( Scene3D *scene , Frustum *frustum )
 	return NodeTreeDrawInFrustum( scene->root , frustum );
 }
 
+void SceneUpdateAnimationsTimeline( Scene3D *scene , float delta )
+{
+	if ( scene->nodeSlotsIndex == 0 ) return ;
+
+	if ( scene->root == NULL )
+	{
+		scene->root = SceneFindNode( scene , "root" );
+
+		if ( scene->root == NULL ) 
+		{
+			scene->root = &( scene->nodeSlots[0] );
+		}
+	}
+
+	NodeTreeUpdateAnimationTimeline( scene->root , delta );
+}
 
 #endif //RSCENEGRAPH_IMPLEMENTATION
