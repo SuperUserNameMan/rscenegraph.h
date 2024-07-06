@@ -559,6 +559,8 @@ void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
 			if ( TextIsEqual( parent->model->bones[i].name , boneName ) )
 			{
 				child->position = parent->model->bindPose[i].translation ;
+				child->scale    = parent->model->bindPose[i].scale ;
+				child->rotation = QuaternionToMatrix( parent->model->bindPose[i].rotation );
 				child->positionRelativeToParentBoneId = i ;
 				child->positionRelativeToParentBoneName = parent->model->bones[i].name ;
 				NodeUpdateTransforms( child );
@@ -766,7 +768,22 @@ void NodeUpdateTransforms( Node *node )
 		if ( node->activeLOD == NULL || node->activeLOD == node )
 		{
 			UpdateModelAnimation( *node->model , node->animations.list[ node->currentAnimationIndex ] , (int)node->animPosition );
+
 		}
+	}
+
+	// Update position relative to parent's animated bone :
+
+	if ( node->parent != NULL && node->positionRelativeToParentBoneId >= 0 && node->positionRelativeToParentBoneId < node->parent->model->boneCount )
+	{
+		int boneId = node->positionRelativeToParentBoneId ;
+		int frame  = (int)node->parent->animPosition ;
+
+		ModelAnimation anim = node->parent->animations.list[ node->parent->currentAnimationIndex ] ;
+
+		node->position = anim.framePoses[frame][boneId].translation; ;
+		node->scale    = anim.framePoses[frame][boneId].scale ;
+		node->rotation = QuaternionToMatrix( anim.framePoses[frame][boneId].rotation );
 	}
 
 	// Calculate node's transformation matrix
@@ -994,11 +1011,5 @@ bool NodeDrawInFrustum( Node *node , Frustum *frustum )
 
 	return node->insideFrustum ; 
 }
-
-
-
-
-
-
 
 #endif //RNODES_IMPLEMENTATION
