@@ -126,18 +126,18 @@ RLAPI Node3D NodeReplaceModel( Node3D node , Model *model );
 RLAPI void NodeSetName( Node *node , char *name );
 #define SetNodeName NodeSetName
 
-RLAPI void NodeAttachChild( Node *parent , Node *child ); // 
-RLAPI void NodeAttachChildToBone( Node *parent , Node *child , char *boneName );
+RLAPI void NodeAttachChild( Node *parent , Node *child ); // The child keeps its relative transforms
+RLAPI void NodeTakeChild( Node *parent , Node *child ); // Attach and preserve global transforms
+
+RLAPI void NodeAttachChildToBone( Node *parent , Node *child , char *boneName ); // The child relative transforms are replaced with the bone's
 
 RLAPI void NodeDetachBranch( Node *branch ); // Detach the node and its children from the tree.
 #define DetachNodeBranch NodeDetachBranch
-RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
-#define RemoveNode NodeRemove
-
-RLAPI void NodeTakeChild( Node *parent , Node *child ); // Attach and preserve global transforms
-RLAPI void NodeTakeChildUsingBone( Node *parent , Node *child , char *boneName ); // Attach to bone and preserve global transforms
 RLAPI void NodeAbandonBranch( Node *branch );  // Detach the branch and preserve its global transforms
 #define AbandonNodeBranch NodeAbandonBranch
+
+RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
+#define RemoveNode NodeRemove
 RLAPI void NodeAbandon( Node *node ); // Remove the node and preserve its global transforms
 #define AbandonNode NodeAbandon
 
@@ -583,22 +583,6 @@ void NodeTakeChild( Node *parent , Node *child )
 	NodeAttachChild( parent , child );
 }
 
-void NodeTakeChildUsingBone( Node *parent , Node *child , char *boneName )
-{
-	if ( child->parent != NULL )
-	{
-		NodeAbandonBranch( child ); 
-	}
-
-	NodeUpdateTransforms( parent );
-	NodeUpdateTransforms( child );
-
-	child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ) );
-	
-	NodeUnpackTransforms( child );
-
-	NodeAttachChildToBone( parent , child , boneName );
-}
 
 // Same as NodeDetachBranch except that we convert the relative transforms to global space
 void NodeAbandonBranch( Node *branch )
