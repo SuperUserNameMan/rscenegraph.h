@@ -38,10 +38,13 @@ typedef struct Frustum
 	Matrix view ;
 
 	// Frustum planes :
+	// Note : their normals point inside the frustum
+	// so that if a point is touching or is "under" a plane,
+	// it is considered "oustide" the frustum.
 
 	union 
 	{
-		Vector4 plane[6] ;
+		Vector4 plane[6] ; // x , y , z = normal , w = distance
 		struct 
 		{
 			Vector4 up ;
@@ -78,28 +81,28 @@ RLAPI Vector3 MatrixExtractTranslation( Matrix m );
 #define TranslationFromMatrix MatrixExtractTranslation
 #define ExtractTranslationFromMatrix MatrixExtractTranslation
 
-RLAPI Vector3 MatrixExtractScale( Matrix m );
+RLAPI Vector3 MatrixExtractScale( Matrix m ); // Return the absolute scale of each axis (Note : negative scales not supported)
 #define ScaleFromMatrix MatrixExtractScale
 #define ExtractScaleFromMatrix MatrixExtractScale
 
 // Plane stuff :
 
-RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point );
+RLAPI float PlaneDistanceToPoint( Vector4 plane , Vector3 point ); // Signed distance between point and plane. Negative distance means the point is under the plane.
 
-RLAPI bool CheckCollisionPlanePoint( Vector4 plane , Vector3 point );
-RLAPI bool CheckCollisionPlaneSphere( Vector4 plane , Vector3 center , float radius );
-RLAPI bool CheckCollisionPlaneBox( Vector4 plane , BoundingBox box );
-RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Return a BoundingBoxCornersFlag bitfield
+RLAPI bool CheckCollisionPlanePoint( Vector4 plane , Vector3 point ); // True if point is touching or under the plane
+RLAPI bool CheckCollisionPlaneSphere( Vector4 plane , Vector3 center , float radius ); // True if sphere is touching or under the plane
+RLAPI bool CheckCollisionPlaneBox( Vector4 plane , BoundingBox box ); // True if any corner if touching or under the plane
+RLAPI int  CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box ); // Return a BoundingBoxCornersFlag bitfield to tell which corners
 
 // Frustum stuff :
 
-RLAPI Frustum FrustumFromCamera( Camera *camera , float aspect );
+RLAPI Frustum FrustumFromCamera( Camera *camera , float aspect ); // Compute the furstum of a perspective or orthogonal camera.
 #define GetCameraFrustum FrustumFromCamera
 #define CameraGetFrustum FrustumFromCamera
 
-RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point );
-RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius );
-RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
+RLAPI bool FrustumContainsPoint( Frustum *frustum , Vector3 point ); // True if above all planes
+RLAPI bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius ); // True if at least a surface is above all planes
+RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box ); // True if at least one corner is above all planes
 
 #if defined(__cplusplus)
 }
@@ -109,26 +112,27 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
 
-// Note : this function does not check to division by zero
+// Normalize each axis of the transform matrix (cancel the scale factor)
+// Note : this function does not check for division by zero
 Matrix MatrixNormalize( Matrix m )
 {
 	// Normalize X axis :
 
-	float len = Vector3Length( (Vector3){ m.m0 , m.m1 , m.m2 } );
+	float len = Vector3Length( (Vector3){ m.m0 , m.m1 , m.m2 } ); // Length of X axis
 	m.m0 /= len ;
 	m.m1 /= len ;
 	m.m2 /= len ;
 
 	// Normalize Y axis :
 
-	len = Vector3Length( (Vector3){ m.m4 , m.m5 , m.m6 } );
+	len = Vector3Length( (Vector3){ m.m4 , m.m5 , m.m6 } );  // Length of Y axis
 	m.m4 /= len ;
 	m.m5 /= len ;
 	m.m6 /= len ;
 
 	// Normalize Z axis :
 
-	len = Vector3Length( (Vector3){ m.m8 , m.m9 , m.m10 } );
+	len = Vector3Length( (Vector3){ m.m8 , m.m9 , m.m10 } );  // Length of Z axis
 	m.m8 /= len ;
 	m.m9 /= len ;
 	m.m10 /= len ;
@@ -136,6 +140,8 @@ Matrix MatrixNormalize( Matrix m )
 	return m ;
 }
 
+// Convert a tranform matrix into a rotation matrix :
+// Note : does not check for division by zero
 Matrix MatrixRotation( Matrix m )
 {
 	// Nullify the translation :
@@ -155,12 +161,14 @@ Vector3 MatrixExtractTranslation( Matrix m )
 	return (Vector3){ m.m12 , m.m13 , m.m14 };
 }
 
+// Extract absolute scales of a tranform matrix :
+// Note : won't work as expected with negative scales used for mirroring effects etc
 Vector3 MatrixExtractScale( Matrix m )
 {
 	return (Vector3){
-		sqrtf( m.m0*m.m0 + m.m1*m.m1 + m.m2*m.m2 ),
-		sqrtf( m.m4*m.m4 + m.m5*m.m5 + m.m6*m.m6 ),
-		sqrtf( m.m8*m.m8 + m.m9*m.m9 + m.m10*m.m10 )
+		sqrtf( m.m0*m.m0 + m.m1*m.m1 + m.m2*m.m2 ),  // Absolute length of X axis
+		sqrtf( m.m4*m.m4 + m.m5*m.m5 + m.m6*m.m6 ),  // Absolute length of Y axis
+		sqrtf( m.m8*m.m8 + m.m9*m.m9 + m.m10*m.m10 ) // Absolute length of Z axis
 	};
 }
 
@@ -355,6 +363,7 @@ int CheckCollisionPlaneBoxEx( Vector4 plane , BoundingBox box )
 	return corners;
 }
 
+// Return true if any part of the sphere is above all planes :
 bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius )
 {
 	for( int i = 0 ; i < 6 ; i++ )
@@ -365,12 +374,13 @@ bool FrustumContainsSphere( Frustum *frustum , Vector3 center , float radius )
 	return true;
 }
 
-
+// Return true if the point is above all planes :
 bool FrustumContainsPoint( Frustum *frustum , Vector3 point )
 {
 	return FrustumContainsSphere( frustum , point , 0.0f );
 }
 
+// Return true if at least one corner is above all planes :
 bool FrustumContainsBox( Frustum *frustum , BoundingBox box )
 {
 	// A box is outside the frustum if all its corners are outside a single plane
