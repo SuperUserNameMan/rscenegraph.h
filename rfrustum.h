@@ -130,9 +130,13 @@ Matrix MatrixNormalize( Matrix m )
 
 Matrix MatrixRotation( Matrix m )
 {
+	// Nullify the translation :
+
 	m.m12 = 0.0f ;
 	m.m13 = 0.0f ;
 	m.m14 = 0.0f ;
+
+	// Nullify the scale :
 
 	return MatrixNormalize( m );
 }
@@ -151,7 +155,6 @@ Vector3 MatrixExtractScale( Matrix m )
 		sqrtf( m.m8*m.m8 + m.m9*m.m9 + m.m10*m.m10 )
 	};
 }
-
 
 
 BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
@@ -206,8 +209,8 @@ BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform )
 
 	// Calculate new AABB :
 
-	box.min = (Vector3){ 9999999.0f , 9999999.0f, 9999999.0f };
-	box.max = (Vector3){-9999999.0f ,-9999999.0f,-9999999.0f };
+	box.min = (Vector3){ 999999999.0f , 999999999.0f, 999999999.0f }; // TODO FIXME use some limit constants instead ?
+	box.max = (Vector3){-999999999.0f ,-999999999.0f,-999999999.0f };
 
 	for( int i = A ; i <= H ; i++ )
 	{
