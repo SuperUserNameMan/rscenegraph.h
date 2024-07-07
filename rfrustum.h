@@ -67,7 +67,8 @@ RLAPI BoundingBox BoundingBoxTransform( BoundingBox box , Matrix transform );
 
 // Matrix space travels :
 
-RLAPI Matrix MatrixNormalize( Matrix m ); // Normalize the scales of the transform matrix
+RLAPI Matrix MatrixNormalize( Matrix m ); // Normalize the scales of the transform matrix (Note : does not check division by zero)
+
 RLAPI Matrix MatrixRotation( Matrix m ); // Normalize the scales, and nullify the translation of the transform matrix
 #define MatrixExtractRotationMatrix MatrixRotation
 #define RotationMatrixFromMatrix MatrixRotation
@@ -76,6 +77,7 @@ RLAPI Matrix MatrixRotation( Matrix m ); // Normalize the scales, and nullify th
 RLAPI Vector3 MatrixExtractTranslation( Matrix m );
 #define TranslationFromMatrix MatrixExtractTranslation
 #define ExtractTranslationFromMatrix MatrixExtractTranslation
+
 RLAPI Vector3 MatrixExtractScale( Matrix m );
 #define ScaleFromMatrix MatrixExtractScale
 #define ExtractScaleFromMatrix MatrixExtractScale
@@ -107,18 +109,24 @@ RLAPI bool FrustumContainsBox( Frustum *frustum , BoundingBox box );
 
 #if defined(RFRUSTUM_IMPLEMENTATION)
 
-
+// Note : this function does not check to division by zero
 Matrix MatrixNormalize( Matrix m )
 {
+	// Normalize X axis :
+
 	float len = Vector3Length( (Vector3){ m.m0 , m.m1 , m.m2 } );
 	m.m0 /= len ;
 	m.m1 /= len ;
 	m.m2 /= len ;
 
+	// Normalize Y axis :
+
 	len = Vector3Length( (Vector3){ m.m4 , m.m5 , m.m6 } );
 	m.m4 /= len ;
 	m.m5 /= len ;
 	m.m6 /= len ;
+
+	// Normalize Z axis :
 
 	len = Vector3Length( (Vector3){ m.m8 , m.m9 , m.m10 } );
 	m.m8 /= len ;
