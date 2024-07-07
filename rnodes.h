@@ -40,46 +40,59 @@ typedef struct Node3D
 
 	Color tint ;
 
-	// Node transforms :
+	// Relative node's transforms 
+	// Note : they are in node's local space, ie, relative to the parent's transform.
+
 	Vector3    position ;
 	Vector3    scale    ;
-	Matrix     rotation ; // Contains the rotation matrix only // TODO use Quaternion instead ?
+	Matrix     rotation ; // Contains the rotation matrix only (ie, the 3 axis normals) // TODO use Quaternion instead ?
 
-	int        positionRelativeToParentBoneId ;   // TODO : explain
+	// If set, above transform are then relative to this parent's bone :
+
 	char      *positionRelativeToParentBoneName ;
+	int        positionRelativeToParentBoneId ;
 
-	Matrix transform ; // Computed using position, scale and rotation and parent's transform /!\
+	// Global transform matrix :
+	// Note : Computed using above position, scale and rotation, as well as parent's transform.
+	// So, when the node has a parent, it is, thus, a global-space transform.
 
-	// Untransformed boundings are in model's space
-	// and are computed once in LoadNodeFromModel()
+	Matrix transform ; 
+
+	// Untransformed boundings :
+	// They are in model's space and are computed once in LoadNodeFromModel()
+
 	BoundingBox untransformedBox ;
 	Vector3 untransformedCenter ;
 	float untransformedRadius ;
 
-	// Transformed boundings are in World's space
-	// and are updated when required.
+	// Transformed boundings :
+	// Note : they are in World's space and are updated when required.
+
 	BoundingBox transformedBox ;
 	Vector3 transformedCenter ;
 	float transformedRadius ;
 
-	// Basic scenegraph bindings ...
+	// Basic scenegraph bindings :
 
 	Node3D *parent;
 	Node3D *firstChild;
 	Node3D *nextSibling;
 	Node3D *prevSibling;
 
-	// Frustum visibility ...
+	// Frustum visibility :
 
 	Frustum * lastFrustum ; // Points the last frustum relative to which the node was drawn
 	bool insideFrustum ; // Tells if the node was visible in the frustum
 	float distanceToCamera ; // Tells at which distance the node was from the camera
 
+	// Level Of Details chain :
+
 	Node3D *nextLOD ;
 	float nextDistance ;
-	Node3D *activeLOD ;
 
-	// Animation stuff ...
+	Node3D *activeLOD ; // Tells which LOD is active in relation to current frustum's camera
+
+	// Animation management :
 
 	AnimationsList animations ;
 	int currentAnimationIndex ;               // Id of the currently selected anim
@@ -90,7 +103,7 @@ typedef struct Node3D
 
 	NodeAnimationEventCallback animEventCallback ; // If set, will be called on animation events
 
-	// User data :
+	// Pointer to user data :
 	void *userData ;
 
 } Node3D;
@@ -113,13 +126,20 @@ RLAPI Node3D NodeReplaceModel( Node3D node , Model *model );
 RLAPI void NodeSetName( Node *node , char *name );
 #define SetNodeName NodeSetName
 
-RLAPI void NodeAttachChild( Node *parent, Node *child );
-RLAPI void NodeAttachChildToBone( Node *parent, Node *child , char *boneName );
+RLAPI void NodeAttachChild( Node *parent , Node *child ); // 
+RLAPI void NodeAttachChildToBone( Node *parent , Node *child , char *boneName );
 
-RLAPI void NodeDetachBranch( Node *node ); // Detach the node and its children from the tree.
+RLAPI void NodeDetachBranch( Node *branch ); // Detach the node and its children from the tree.
 #define DetachNodeBranch NodeDetachBranch
 RLAPI void NodeRemove( Node *node ); // Remove the node from its tree so that its children take its place.
 #define RemoveNode NodeRemove
+
+RLAPI void NodeTakeChild( Node *parent , Node *child ); // Attach and preserve global transforms
+RLAPI void NodeTakeChildUsingBone( Node *parent , Node *child , char *boneName ); // Attach to bone and preserve global transforms
+RLAPI void NodeAbandonBranch( Node *branch );  // Detach the branch and preserve its global transforms
+#define AbandonNodeBranch NodeAbandonBranch
+RLAPI void NodeAbandon( Node *node ); // Remove the node and preserve its global transforms
+#define AbandonNode NodeAbandon
 
 typedef void (*NodeTreeTraversalCallback)( Node *node , void *userData );
 
@@ -137,7 +157,7 @@ RLAPI void NodeTreeUpdateTransforms( Node *root ); // Update the transform matri
 RLAPI void NodeUpdateTransforms( Node *node ); // Update the transform matrix of the node from its position, scale and rotation
 #define UpdateNodeTransforms NodeUpdateTransforms
 
-RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix into position, scale and rotation
+RLAPI void NodeUnpackTransforms( Node *node ); // Decompose the transform matrix back into position, scale and rotation.
 #define UnpackNodeTransforms NodeUnpackTransforms
 
 
@@ -543,6 +563,55 @@ void NodeRemove( Node *node )
 	node->firstChild  = NULL ;
 	node->positionRelativeToParentBoneId = -1 ;
 	node->positionRelativeToParentBoneName = NULL ;
+}
+
+// Same as NodeAttachChild except that the child remains in same global space location
+void NodeTakeChild( Node *parent , Node *child )
+{
+	if ( child->parent != NULL )
+	{
+		NodeAbandonBranch( child ); 
+	}
+
+	NodeUpdateTransforms( parent );
+	NodeUpdateTransforms( child );
+
+	child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ) );
+	
+	NodeUnpackTransforms( child );
+
+	NodeAttachChild( parent , child );
+}
+
+void NodeTakeChildUsingBone( Node *parent , Node *child , char *boneName )
+{
+	if ( child->parent != NULL )
+	{
+		NodeAbandonBranch( child ); 
+	}
+
+	NodeUpdateTransforms( parent );
+	NodeUpdateTransforms( child );
+
+	child->transform = MatrixMultiply( child->transform , MatrixInvert( parent->transform ) );
+	
+	NodeUnpackTransforms( child );
+
+	NodeAttachChildToBone( parent , child , boneName );
+}
+
+// Same as NodeDetachBranch except that we convert the relative transforms to global space
+void NodeAbandonBranch( Node *branch )
+{
+	NodeUnpackTransforms( branch );
+	NodeDetachBranch( branch );
+}
+
+// Same as Remove except that we convert the relative transforms to global space
+void NodeAbandon( Node *node )
+{
+	NodeUnpackTransforms( node );
+	NodeRemove( node );
 }
 
 void NodeAttachChildToBone( Node *parent , Node *child , char *boneName )
