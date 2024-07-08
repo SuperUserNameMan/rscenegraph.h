@@ -1,10 +1,4 @@
-#include <raylib.h>
-#include <rlgl.h>
-#include <raymath.h>
-#include <rcamera.h>
-
-#include "rfrustum.h"
-
+#include "raylib.h"
 
 #define RFRUSTUM_IMPLEMENTATION
 #include "rfrustum.h"
